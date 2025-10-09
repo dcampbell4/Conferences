@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student-Parent-Teacher Conference Prompts</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom font and smooth scrolling for a professional feel */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7fafc; /* Light gray background */
+        }
+        .prompt-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .prompt-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        /* Custom class to push content down below the fixed header (approx 8rem clearance) */
+        .main-content-padding {
+            padding-top: 8rem; 
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <!-- Header Section (FIXED TO TOP) -->
+    <header class="text-center p-6 bg-white shadow-xl border-b-4 border-gray-800 fixed top-0 left-0 right-0 z-50">
+        <!-- Inner container to keep content centered with the rest of the page -->
+        <div class="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center">
+            <!-- Title and Subtitle -->
+            <div class="mb-3 sm:mb-0 sm:text-left">
+                <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-800">Mr. Campbell's Conference Discussion Guide</h1>
+                <p class="text-sm text-gray-500 mt-1">Student, Parent, & Teacher Collaboration</p>
+            </div>
+            
+            <!-- Timer Display (Updated to Gray/Black) -->
+            <div id="timerDisplay" class="px-4 py-2 bg-gray-200 text-gray-800 font-mono text-3xl rounded-lg shadow-inner font-bold">
+                15:00
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container (Requires top padding to clear the fixed header) -->
+    <div class="max-w-6xl mx-auto main-content-padding"> 
+        
+        <!-- The content grid starts here -->
+        <div class="space-y-8">
+
+            <!-- Section 1: Growth, Support, and Belonging -->
+            <div class="prompt-card p-6 bg-white rounded-xl shadow-md border-t-4 border-indigo-500">
+                <h2 class="text-2xl font-bold text-indigo-700 mb-4">1. Growth, Support, and Belonging</h2>
+                <p class="text-sm text-gray-500 mb-6 italic">Holistic view of the students experience (Approx. 4-5 mins)</p>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Student Prompts -->
+                    <div class="col-span-1 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                        <p class="font-bold text-indigo-800 mb-2">Student Focus / Foco no Estudante</p>
+                        <ul class="list-disc list-inside space-y-3 text-gray-700">
+                            <li>What are you most proud of achieving or learning this year, and what has been the most interesting challenge?
+                                <span class="block text-sm text-indigo-700 mt-1 italic">Tradução: Do que você mais se orgulha de ter conquistado ou aprendido neste ano, e qual foi o desafio mais interessante?</span>
+                            </li>
+                            <li>What helps you the most when you get stuck?
+                                <span class="block text-sm text-indigo-700 mt-1 italic">Tradução: O que mais te ajuda quando você fica preso em algo?</span>
+                            </li>
+                            <li>In what ways have you been able to contribute to the class or help others?
+                                <span class="block text-sm text-indigo-700 mt-1 italic">Tradução: De que maneiras você conseguiu contribuir com a turma ou ajudar os outros?</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <!-- Parent Prompts -->
+                    <div class="col-span-1 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                        <p class="font-bold text-indigo-800 mb-2">Parent/Guardian Focus / Foco no Responsável</p>
+                        <ul class="list-disc list-inside space-y-3 text-gray-700">
+                            <li>Where do you see your student feeling the most energized or engaged by their schoolwork?
+                                <span class="block text-sm text-indigo-700 mt-1 italic">Tradução: Onde você vê seu(sua) estudante se sentindo mais energizado(a) ou engajado(a) com os trabalhos escolares?</span>
+                            </li>
+                            <li>What kind of support is most helpful for your student when they face a challenge?
+                                <span class="block text-sm text-indigo-700 mt-1 italic">Tradução: Que tipo de apoio é mais útil para seu(sua) estudante quando ele(a) enfrenta um desafio?</span>
+                            </li>
+                            <li>Are you seeing them develop any new collaborative or leadership skills?
+                                <span class="block text-sm text-indigo-700 mt-1 italic">Tradução: Você tem visto ele(a) desenvolver novas habilidades de colaboração ou liderança?</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 2: Academic Achievement & Growth -->
+            <div class="prompt-card p-6 bg-white rounded-xl shadow-md border-t-4 border-purple-500">
+                <h2 class="text-2xl font-bold text-purple-700 mb-4">2. Academic Achievement & Growth</h2>
+                <p class="text-sm text-gray-500 mb-6 italic">Review work and set clear, collaborative goals (Approx. 5-6 mins)</p>
+
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Student Prompts (REVISED) -->
+                    <div class="col-span-1 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                        <p class="font-bold text-purple-800 mb-2">Student Focus / Foco no Estudante</p>
+                        <ul class="list-disc list-inside space-y-3 text-gray-700">
+                            <li>Looking at the work in your notebook and online portfolio, what skill do you feel you've mastered?
+                                <span class="block text-sm text-purple-700 mt-1 italic">Tradução: Olhando para o trabalho em seu caderno e portfólio online, qual habilidade você sente que dominou?</span>
+                            </li>
+                            <li>Elaborate on the goals or areas for growth in your online portfolio.
+                                <span class="block text-sm text-purple-700 mt-1 italic">Tradução: Elabore sobre os objetivos ou áreas de crescimento no seu portfólio online</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <!-- Parent Prompts -->
+                    <div class="col-span-1 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                        <p class="font-bold text-purple-800 mb-2">Parent/Guardian Focus / Foco no Responsável</p>
+                        <ul class="list-disc list-inside space-y-3 text-gray-700">
+                            <li>Which skills do you see your student working on confidently at home?
+                                <span class="block text-sm text-purple-700 mt-1 italic">Tradução: Quais habilidades você vê seu(sua) estudante praticando com confiança em casa?</span>
+                            </li>
+                            <li>What is your primary hope regarding your students learning habits or performance over the next few months?
+                                <span class="block text-sm text-purple-700 mt-1 italic">Tradução: Qual é a sua principal esperança em relação aos hábitos de estudo ou desempenho do(a) seu(sua) estudante nos próximos meses?</span>
+                            </li>
+                            <li>How can we, the school and home, reinforce this one goal together?
+                                <span class="block text-sm text-purple-700 mt-1 italic">Tradução: Como nós, a escola e o lar, podemos reforçar este objetivo em conjunto?</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 3: Standardized Testing & Data Review -->
+            <div class="prompt-card p-6 bg-white rounded-xl shadow-md border-t-4 border-teal-500">
+                <h2 class="text-2xl font-bold text-teal-700 mb-4">3. Standardized Testing</h2>
+                <p class="text-sm text-gray-500 mb-6 italic">Connecting data to classroom learning (Approx. 2-3 mins)</p>
+
+
+                <div class="grid md:grid-cols-1 gap-6">
+                    <!-- Student & Parent Focus -->
+                    <div class="col-span-1 p-4 bg-teal-50 rounded-lg border border-teal-200">
+                        <p class="font-bold text-teal-800 mb-2">Student & Parent Focus / Foco no Estudante e Responsável</p>
+                        <ul class="list-disc list-inside space-y-3 text-gray-700">
+                            <li>(Student) Do you feel the test results reflect your abilities and understandings? Why or why not?
+                                <span class="block text-sm text-teal-700 mt-1 italic">Tradução: (Estudante) Você sente que os resultados do teste refletem suas habilidades e conhecimentos? Por que sim ou por que não?</span>
+                            </li>
+                            <li>(Parent) When you look at the results, what questions or conclusions come to mind?
+                                <span class="block text-sm text-teal-700 mt-1 italic">Tradução: (Responsável) Ao olhar para os resultados, quais perguntas ou conclusões lhe vêm à mente?</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 4: Open Questions & Wrap-Up -->
+            <div class="prompt-card p-6 bg-white rounded-xl shadow-md border-t-4 border-red-500">
+                <h2 class="text-2xl font-bold text-red-700 mb-4">4. Open Questions & Wrap-Up</h2>
+                <p class="text-sm text-gray-500 mb-6 italic">Open Discussion (Approx. 2-3 mins)</p>
+
+
+                <div class="grid md:grid-cols-1 gap-6">
+                    <!-- Open Questions & Summary -->
+                    <div class="col-span-1 p-4 bg-red-50 rounded-lg border border-red-200">
+                        <p class="font-bold text-red-800 mb-2">Open Questions / Perguntas Abertas</p>
+                        <ul class="list-disc list-inside space-y-3 text-gray-700">
+                            <li>Are there any topics, concerns, or celebrations we haven't touched on that you would like to share?
+                                <span class="block text-sm text-red-700 mt-1 italic">Tradução: Há algum tópico, preocupação ou celebração que não abordamos e que você gostaria de compartilhar?</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+        
+        <!-- Footer for padding -->
+        <div class="py-8"></div>
+    </div>
+
+    <script>
+        let timeRemaining = 15 * 60; // 15 minutes in seconds
+        const timerDisplay = document.getElementById('timerDisplay');
+        let timerInterval;
+
+        function formatTime(totalSeconds) {
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        function updateTimer() {
+            if (timeRemaining <= 0) {
+                clearInterval(timerInterval);
+                timerDisplay.textContent = "TIME'S UP!";
+                // Ensure all possible colors/animations are removed before setting final state
+                timerDisplay.classList.remove('bg-gray-200', 'text-gray-800', 'bg-yellow-200', 'text-yellow-800', 'bg-yellow-400', 'animate-pulse');
+                timerDisplay.classList.add('bg-red-700', 'text-white');
+                return;
+            }
+
+            // --- Visual Alerts ---
+            
+            // Under 1 minute (60 seconds) - Danger Zone (Flashing Yellow)
+            if (timeRemaining <= 60) {
+                // Remove initial gray and intermediate yellow states
+                timerDisplay.classList.remove('bg-gray-200', 'text-gray-800', 'bg-yellow-200', 'text-yellow-800');
+                timerDisplay.classList.add('bg-yellow-400', 'text-gray-800', 'animate-pulse');
+            } 
+            // Under 3 minutes (180 seconds) - Wrap Up Zone (Solid Yellow)
+            else if (timeRemaining <= 180) {
+                // Remove initial gray and final yellow states
+                timerDisplay.classList.remove('bg-gray-200', 'text-gray-800', 'bg-yellow-400', 'animate-pulse');
+                timerDisplay.classList.add('bg-yellow-200', 'text-yellow-800');
+            }
+            
+            timerDisplay.textContent = formatTime(timeRemaining);
+            timeRemaining--;
+        }
+
+        // Start the timer when the page loads
+        window.onload = function() {
+            updateTimer(); // Initial call to set 15:00 display
+            timerInterval = setInterval(updateTimer, 1000);
+        };
+    </script>
+
+</body>
+</html>
