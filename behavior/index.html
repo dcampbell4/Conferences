@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Effort Tracker</title>
+<meta name="description" content="One-tap classroom effort and behavior logging with a pop-out widget.">
+<!-- SheetJS: reads .xlsx / .csv rosters in the browser. Nothing is uploaded to a server. -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  /* ---------- Design tokens (light + dark) ---------- */
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #eef0f3; --border: #d9dde3;
+    --text: #1b1f24; --muted: #5f6b7a; --accent: #1f2937;
+    --con: #b45309; --con-bg: #fef3c7;
+    --int: #b91c1c; --int-bg: #fee2e2;
+    --exp: #15803d; --exp-bg: #dcfce7;
+    --pos: #15803d;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.05);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111418; --surface: #1a1e24; --surface-2: #232830; --border: #323843;
+      --text: #e8ebef; --muted: #9aa4b2; --accent: #e8ebef;
+      --con: #fbbf24; --con-bg: #3a2c0a; --int: #f87171; --int-bg: #3b1414;
+      --exp: #4ade80; --exp-bg: #10301c; --pos: #4ade80;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111418; --surface: #1a1e24; --surface-2: #232830; --border: #323843;
+    --text: #e8ebef; --muted: #9aa4b2; --accent: #e8ebef;
+    --con: #fbbf24; --con-bg: #3a2c0a; --int: #f87171; --int-bg: #3b1414;
+    --exp: #4ade80; --exp-bg: #10301c; --pos: #4ade80;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  h1, h2, h3 { margin: 0; line-height: 1.2; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+
+  /* ---------- Top bar ---------- */
+  header.top {
+    position: sticky; top: 0; z-index: 20; background: var(--surface);
+    border-bottom: 1px solid var(--border); box-shadow: var(--shadow);
+  }
+  .top-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; flex-wrap: wrap; }
+  .brand { font-weight: 800; font-size: 18px; margin-right: auto; }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tab {
+    border: 1px solid var(--border); background: var(--surface-2); border-radius: 999px;
+    padding: 6px 14px; font-weight: 600; font-size: 14px;
+  }
+  .tab[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .class-row { padding: 0 16px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .btn {
+    border: 1px solid var(--border); background: var(--surface); border-radius: 8px;
+    padding: 7px 12px; font-weight: 600; font-size: 14px;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .btn.danger { color: var(--int); }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .panel h2 { font-size: 17px; margin-bottom: 8px; }
+
+  /* ---------- Legend ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-bottom: 12px; font-size: 13px; }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+
+  /* ---------- Student cards (one-tap logging) ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 10px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px;
+  }
+  .card .who { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; min-height: 40px; }
+  .card .first { font-weight: 700; font-size: 16px; }
+  .card .last { font-size: 12px; color: var(--muted); display: block; }
+  .today { display: flex; flex-wrap: wrap; gap: 3px; justify-content: flex-end; max-width: 80px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+  .dot.int { outline: 2px solid var(--int); outline-offset: 1px; }
+  .dot.pos { background: none; color: var(--pos); width: auto; height: auto; font-size: 11px; line-height: 10px; }
+  .btns { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  .ib {
+    position: relative; overflow: hidden; border: 0; border-radius: 8px; height: 44px;
+    background: var(--c); color: #fff; font-size: 18px; display: grid; place-items: center;
+    touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  }
+  .ib::after { /* hold-to-INT progress fill */
+    content: ""; position: absolute; inset: 0; background: rgba(0,0,0,.35);
+    transform: scaleY(0); transform-origin: bottom;
+  }
+  .ib.holding::after { transform: scaleY(1); transition: transform var(--hold, 550ms) linear; }
+  .ib:active { filter: brightness(.9); }
+  .ib.posb { background: var(--surface-2); color: var(--pos); border: 1px solid var(--border); }
+  .ib.flash { animation: flash .5s; }
+  @keyframes flash { 0% { box-shadow: 0 0 0 0 var(--c); } 100% { box-shadow: 0 0 0 10px transparent; } }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
+    background: var(--accent); color: var(--bg); border-radius: 10px; padding: 8px 8px 8px 14px;
+    display: flex; gap: 8px; align-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+    max-width: calc(100vw - 24px); font-size: 14px;
+  }
+  .toast button { background: transparent; border: 1px solid currentColor; color: inherit; border-radius: 6px; padding: 4px 8px; font-weight: 700; font-size: 13px; }
+  .toast[hidden] { display: none; }
+
+  /* ---------- Tables ---------- */
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+  th { font-size: 12px; color: var(--muted); font-weight: 700; white-space: nowrap; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: var(--surface-2); }
+  .lvl { display: inline-block; min-width: 38px; text-align: center; border-radius: 6px; padding: 1px 6px; font-weight: 700; font-size: 12px; }
+  .lvl.EXP { background: var(--exp-bg); color: var(--exp); }
+  .lvl.CON { background: var(--con-bg); color: var(--con); }
+  .lvl.INT { background: var(--int-bg); color: var(--int); }
+  .lvl.POS { color: var(--pos); }
+  .cnt { font-size: 11px; color: var(--muted); margin-left: 4px; white-space: nowrap; }
+  .ihead { display: inline-flex; align-items: center; gap: 4px; }
+
+  /* ---------- Forms ---------- */
+  label.field { display: block; margin: 8px 0; font-size: 14px; }
+  input[type=text], input[type=number], select, textarea {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; max-width: 100%;
+  }
+  textarea { width: 100%; min-height: 120px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .steps { margin: 0; padding-left: 20px; }
+  .steps li { margin: 4px 0; }
+  details { border-top: 1px solid var(--border); padding: 8px 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  .ind-edit { display: grid; grid-template-columns: 44px 56px 1fr 120px; gap: 6px; align-items: center; margin: 6px 0; }
+  .ind-edit input[type=color] { width: 44px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 6px; }
+
+  .empty { text-align: center; padding: 40px 16px; }
+  [hidden] { display: none !important; }
+
+  /* ---------- Pop-out widget (rendered into the Picture-in-Picture window) ---------- */
+  body.widget { font-size: 13px; background: var(--surface); }
+  .w-head { position: sticky; top: 0; background: var(--surface); padding: 6px 8px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; z-index: 2; }
+  .w-head select { padding: 2px 4px; font-size: 13px; }
+  .w-head .hint { margin-left: auto; font-size: 11px; color: var(--muted); }
+  .w-list { padding: 4px 6px 60px; }
+  .w-row { display: grid; grid-template-columns: 1fr repeat(6, 30px); gap: 3px; align-items: center; padding: 2px 0; border-bottom: 1px solid var(--surface-2); }
+  .w-row .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .w-row .name small { font-weight: 400; color: var(--muted); margin-left: 4px; }
+  .w-row .ib { height: 28px; font-size: 14px; border-radius: 6px; }
+  body.widget .toast { bottom: 8px; font-size: 12px; }
+
+  @media print {
+    header.top, .no-print, .toast { display: none !important; }
+    body { background: #fff; }
+    .panel { border: 0; }
+  }
+  @media (max-width: 520px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    .card { padding: 8px; }
+    .ib { height: 40px; font-size: 16px; }
+    .ind-edit { grid-template-columns: 44px 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-row">
+    <div class="brand">Effort Tracker</div>
+    <nav class="tabs" id="viewTabs" aria-label="Views">
+      <button class="tab" data-view="log">Log</button>
+      <button class="tab" data-view="dash">Dashboard</button>
+      <button class="tab" data-view="records">Records</button>
+      <button class="tab" data-view="setup">Setup</button>
+    </nav>
+    <button class="btn primary" id="popBtn" title="Open a small always-on-top window you can keep over Slides">⧉ Pop-out widget</button>
+  </div>
+  <div class="class-row" id="classRow"></div>
+</header>
+
+<main>
+  <!-- ========== LOG VIEW ========== -->
+  <section id="view-log" hidden>
+    <div class="legend" id="legend"></div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <!-- ========== DASHBOARD VIEW ========== -->
+  <section id="view-dash" hidden>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <h2>Tally — <span id="dashTitle"></span></h2>
+        <div class="row no-print">
+          <label>Period <select id="monthSel"></select></label>
+          <button class="btn" onclick="window.print()">Print</button>
+        </div>
+      </div>
+      <p class="muted small">Weighted flags per indicator = CON + 2×INT. EXP below <b id="tCon"></b>, CON from <b id="tCon2"></b>, INT from <b id="tInt"></b>. Overall averages the five levels (EXP 3, CON 2, INT 1). Click a student to see their rubric view.</p>
+      <div class="table-wrap"><table id="tally"></table></div>
+    </div>
+    <div class="panel" id="studentView" hidden></div>
+  </section>
+
+  <!-- ========== RECORDS VIEW ========== -->
+  <section id="view-records" hidden>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <h2>Records — <span id="recTitle"></span></h2>
+        <div class="row">
+          <button class="btn" id="csvBtn">Export CSV (this class)</button>
+          <button class="btn" id="csvAllBtn">Export CSV (all classes)</button>
+        </div>
+      </div>
+      <p class="muted small">CSV columns match your spreadsheet's Daily Log (Date, Student, Indicator, Severity, Note), so you can paste them straight in.</p>
+      <div class="table-wrap"><table id="recTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ========== SETUP VIEW ========== -->
+  <section id="view-setup" hidden>
+    <div class="panel" id="welcome">
+      <h2>Welcome 👋</h2>
+      <ol class="steps">
+        <li><b>Upload your roster</b> below (Excel or CSV), or paste names.</li>
+        <li><b>Pick a class</b> from the buttons at the top.</li>
+        <li>On the <b>Log</b> tab, <b>tap</b> a coloured button to log a <b>CON</b> flag. <b>Press and hold</b> to log <b>INT</b>. Tap ★ for a positive moment.</li>
+        <li>Presenting? Click <b>⧉ Pop-out widget</b> for a mini-window that floats over your slides.</li>
+      </ol>
+      <p class="muted small">🔒 Everything stays in <b>this browser on this device</b>. Nothing is sent to a server. Use Backup below to move data between devices.</p>
+    </div>
+
+    <div class="panel">
+      <h2>1 · Upload roster</h2>
+      <p class="muted small">Any spreadsheet with a <b>Student / Name</b> column works. A <b>Class / Period / Section</b> column splits students into classes automatically. You can upload your existing <i>Effort Tracker</i> workbook, and its Daily Log entries will be imported too.</p>
+      <div class="row">
+        <input type="file" id="rosterFile" accept=".xlsx,.xls,.csv" multiple>
+        <label>Class name if the file has none: <input type="text" id="fallbackClass" placeholder="e.g. Period 3" size="12"></label>
+      </div>
+      <details>
+        <summary>…or paste names</summary>
+        <p class="muted small">One student per line. Optionally add a class after a tab or a semicolon, e.g. <code>Choo, Davi; A</code></p>
+        <textarea id="pasteBox" placeholder="Baines, Stella; A&#10;Benicio, Rafael; A"></textarea>
+        <div class="row"><button class="btn primary" id="pasteBtn">Add students</button></div>
+      </details>
+      <details>
+        <summary>Try it with a demo class</summary>
+        <p class="muted small">Loads 12 made-up students into a class called "Demo".</p>
+        <button class="btn" id="demoBtn">Load demo class</button>
+      </details>
+    </div>
+
+    <div class="panel">
+      <h2>2 · Classes &amp; students</h2>
+      <div id="rosterList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>3 · Grading thresholds &amp; indicators</h2>
+      <div class="row">
+        <label>Weighted flags for CON <input type="number" id="thCon" min="1" style="width:70px"></label>
+        <label>Weighted flags for INT <input type="number" id="thInt" min="1" style="width:70px"></label>
+      </div>
+      <p class="muted small">An INT flag counts double; a CON flag counts once.</p>
+      <details>
+        <summary>Edit indicators (colour, icon, name, short label) and rubric wording</summary>
+        <div id="indEdit"></div>
+        <button class="btn" id="resetInd">Reset to default rubric</button>
+      </details>
+    </div>
+
+    <div class="panel">
+      <h2>4 · Backup &amp; sharing</h2>
+      <p class="muted small">Save a backup file often, and before switching computers. To share the tool with a colleague, send them the page link. They upload their own roster, and their data stays on their device.</p>
+      <div class="row">
+        <button class="btn" id="backupBtn">Download backup (.json)</button>
+        <label class="btn">Restore backup <input type="file" id="restoreFile" accept=".json" hidden></label>
+        <button class="btn" id="themeBtn">Toggle dark / light</button>
+        <button class="btn danger" id="wipeBtn">Erase everything</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* =====================================================================
+   Effort Tracker — single-file app. Data lives in localStorage.
+   ===================================================================== */
+
+const STORE_KEY = 'effortTracker.v1';
+const HOLD_MS = 550;           // press-and-hold time to log INT
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+const DEFAULT_INDICATORS = [
+  { key: 'pr', name: 'Punctuality & Readiness', short: 'Ready',    icon: '⏰', color: '#2563eb',
+    rubric: { INT: 'Rarely arrives on time and is consistently unprepared for the lesson. Does not respond when redirected.',
+              CON: 'Punctuality or readiness is inconsistent; occasionally arrives late, forgets materials, or requires extra time to settle in. Sometimes responds when redirected.',
+              EXP: 'Arrives to class on time and is consistently ready to learn with all necessary materials.' } },
+  { key: 'eq', name: 'Use of Equipment & Time', short: 'Equip',    icon: '🛠️', color: '#7c3aed',
+    rubric: { INT: 'Significant misuse of equipment or consistent waste of instructional time. Does not respond when redirected.',
+              CON: 'Use of equipment and time is variable; requires occasional redirection to stay on task or use tools correctly.',
+              EXP: 'Uses classroom equipment and instructional time appropriately and efficiently.' } },
+  { key: 'rc', name: 'Respect & Communication', short: 'Respect',  icon: '🤝', color: '#db2777',
+    rubric: { INT: 'Frequently shows disrespect to others or uses inappropriate methods of communication. Does not respond when redirected.',
+              CON: 'Generally respectful, but communication style is inconsistent and requires reminders to maintain an appropriate tone.',
+              EXP: 'Consistently respectful to staff and peers; communicates in an appropriate and professional manner.' } },
+  { key: 'li', name: 'Language of Instruction', short: 'Language', icon: '💬', color: '#0891b2',
+    rubric: { INT: 'Rarely uses the language of instruction; relies almost exclusively on a native language. Does not respond when redirected.',
+              CON: 'Uses the language of instruction inconsistently; requires occasional redirection to avoid reverting to another language.',
+              EXP: 'Consistently speaks in the language of instruction during all class activities.' } },
+  { key: 'ew', name: 'Engagement & Work Ethic', short: 'Engage',   icon: '🎯', color: '#d97706',
+    rubric: { INT: 'Disengaged from learning; rarely completes activities or fails to meet deadlines. Does not respond when redirected.',
+              CON: 'Engagement and productivity are inconsistent; occasionally or frequently misses deadlines and leaves activities incomplete. Sometimes responds when redirected.',
+              EXP: 'Always engaged in learning; completes all activities and consistently meets deadlines.' } },
+];
+
+/* ---------- State ---------- */
+let state = load();
+let view = state.ui.view || 'log';
+let widget = null;             // { win, root } when the pop-out is open
+let toastTimer = null;
+let lastLogId = null;
+
+function freshState() {
+  return {
+    students: [],                // { id, name, cls }
+    logs: [],                    // { id, ts, date, sid, ind, sev, note }
+    overrides: {},               // "sid|period" -> "EXP"|"CON"|"INT"
+    settings: { conT: 3, intT: 5, indicators: structuredClone(DEFAULT_INDICATORS) },
+    ui: { cls: null, view: 'setup', month: 'this', theme: null },
+  };
+}
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (s && s.students) {
+      const base = freshState();
+      return { ...base, ...s, settings: { ...base.settings, ...s.settings }, ui: { ...base.ui, ...s.ui } };
+    }
+  } catch (e) { /* storage blocked or empty */ }
+  return freshState();
+}
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  catch (e) { showToast('⚠️ Could not save. Is private browsing on? Download a backup!'); }
+}
+
+/* ---------- Helpers ---------- */
+const $ = (id) => document.getElementById(id);
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayStr = () => ymd(new Date());
+const inds = () => state.settings.indicators;
+const indByKey = (k) => inds().find(i => i.key === k);
+const studentById = (id) => state.students.find(s => s.id === id);
+const classes = () => [...new Set(state.students.map(s => s.cls))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+const classStudents = (cls) => state.students.filter(s => s.cls === cls)
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+// "Baines, Stella Rendtorff" -> { first: "Stella", last: "Baines" }
+function splitName(name) {
+  if (name.includes(',')) {
+    const [last, rest] = name.split(',');
+    return { first: (rest || '').trim().split(/\s+/)[0] || last.trim(), last: last.trim() };
+  }
+  const parts = name.trim().split(/\s+/);
+  return { first: parts[0], last: parts.slice(1).join(' ') };
+}
+function shortName(name) {
+  const { first, last } = splitName(name);
+  return last ? `${first} ${last[0]}.` : first;
+}
+function monthLabel(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' });
+}
+
+/* =====================================================================
+   Logging
+   ===================================================================== */
+function addLog(sid, ind, sev) {
+  const now = new Date();
+  const entry = { id: uid(), ts: now.getTime(), date: ymd(now), sid, ind, sev, note: '' };
+  state.logs.push(entry);
+  lastLogId = entry.id;
+  save();
+  const s = studentById(sid);
+  const label = ind === 'pos' ? '★ Positive' : `${sev} · ${indByKey(ind)?.short}`;
+  showToast(`${esc(shortName(s.name))} — ${esc(label)}`, entry);
+  renderLogViews();
+}
+function undoLast(id) {
+  state.logs = state.logs.filter(l => l.id !== id);
+  save(); hideToast(); renderLogViews();
+}
+function toggleSev(id) {
+  const l = state.logs.find(l => l.id === id);
+  if (!l || l.sev === 'POS') return;
+  l.sev = l.sev === 'CON' ? 'INT' : 'CON';
+  save();
+  const s = studentById(l.sid);
+  showToast(`${esc(shortName(s.name))} — ${l.sev} · ${esc(indByKey(l.ind)?.short)}`, l);
+  renderLogViews();
+}
+function addNote(id, root) {
+  const l = state.logs.find(l => l.id === id);
+  if (!l) return;
+  const w = root.ownerDocument.defaultView;
+  const note = w.prompt('Note for this entry (optional):', l.note || '');
+  if (note !== null) { l.note = note.trim(); save(); showToast('Note saved ✓'); renderLogViews(); }
+}
+
+/* ---------- Toast (shown in the main page AND the widget) ---------- */
+function toastHTML(msg, entry) {
+  if (!entry) return `<span>${msg}</span>`;
+  const sw = entry.sev === 'POS' ? '' :
+    `<button data-act="toggleSev" data-id="${entry.id}">${entry.sev === 'CON' ? 'Make INT' : 'Make CON'}</button>`;
+  return `<span>${msg}</span>${sw}
+    <button data-act="note" data-id="${entry.id}">Note</button>
+    <button data-act="undo" data-id="${entry.id}">Undo</button>`;
+}
+function showToast(msg, entry) {
+  const html = toastHTML(msg, entry);
+  for (const t of toastEls()) { t.innerHTML = html; t.hidden = false; }
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, entry ? 6000 : 2500);
+}
+function hideToast() { for (const t of toastEls()) t.hidden = true; }
+function toastEls() {
+  const els = [$('toast')];
+  if (widget) { const t = widget.doc.getElementById('toast'); if (t) els.push(t); }
+  return els;
+}
+
+/* =====================================================================
+   Press handling: tap = CON, press-and-hold = INT.
+   Works in the main page and in the pop-out window (event delegation).
+   ===================================================================== */
+function bindPress(root) {
+  let hold = null; // { btn, timer, fired }
+
+  root.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest('[data-log]');
+    if (!btn || e.button > 0) return;
+    const isPos = btn.dataset.log === 'pos';
+    btn.style.setProperty('--hold', HOLD_MS + 'ms');
+    if (!isPos) btn.classList.add('holding');
+    hold = { btn, fired: false, timer: isPos ? null : setTimeout(() => {
+      hold.fired = true; btn.classList.remove('holding');
+      fire(btn, 'INT');
+    }, HOLD_MS) };
+  });
+  const cancel = () => { if (hold) { clearTimeout(hold.timer); hold.btn.classList.remove('holding'); hold = null; } };
+  root.addEventListener('pointerup', (e) => {
+    if (!hold) return;
+    const { btn, fired } = hold;
+    cancel();
+    if (!fired && e.target.closest('[data-log]') === btn) fire(btn, btn.dataset.log === 'pos' ? 'POS' : 'CON');
+  });
+  root.addEventListener('pointercancel', cancel);
+  root.addEventListener('pointerleave', cancel);
+  root.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-log]')) e.preventDefault(); });
+
+  // Keyboard users: Enter/Space on a button = CON (Shift+Enter = INT)
+  root.addEventListener('keydown', (e) => {
+    const btn = e.target.closest?.('[data-log]');
+    if (!btn || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    fire(btn, btn.dataset.log === 'pos' ? 'POS' : (e.shiftKey ? 'INT' : 'CON'));
+  });
+
+  // Toast buttons + widget class switcher
+  root.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-act]');
+    if (!a) return;
+    const id = a.dataset.id;
+    if (a.dataset.act === 'undo') undoLast(id);
+    if (a.dataset.act === 'toggleSev') toggleSev(id);
+    if (a.dataset.act === 'note') addNote(id, root);
+  });
+}
+function fire(btn, sev) {
+  btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash');
+  if (navigator.vibrate) navigator.vibrate(sev === 'INT' ? [30, 40, 30] : 20);
+  addLog(btn.dataset.sid, btn.dataset.log, sev);
+}
+
+function buttonsHTML(s) {
+  const b = inds().map(i =>
+    `<button class="ib" style="--c:${i.color}" data-log="${i.key}" data-sid="${s.id}"
+       title="${esc(i.name)}: tap = CON, hold = INT" aria-label="${esc(i.name)} for ${esc(s.name)}">
+       ${i.icon}</button>`).join('');
+  return b + `<button class="ib posb" data-log="pos" data-sid="${s.id}" title="Positive moment" aria-label="Positive for ${esc(s.name)}">★</button>`;
+}
+function todayDots(sid) {
+  const t = todayStr();
+  return state.logs.filter(l => l.sid === sid && l.date === t).map(l => {
+    if (l.sev === 'POS') return `<span class="dot pos" title="Positive">★</span>`;
+    const i = indByKey(l.ind);
+    return `<span class="dot ${l.sev === 'INT' ? 'int' : ''}" style="--c:${i?.color}" title="${l.sev} · ${esc(i?.name)}"></span>`;
+  }).join('');
+}
+
+/* =====================================================================
+   Rendering
+   ===================================================================== */
+function renderAll() {
+  applyTheme();
+  const cls = classes();
+  if (!cls.includes(state.ui.cls)) state.ui.cls = cls[0] ?? null;
+  if (!state.students.length && view !== 'setup') view = 'setup';
+
+  document.querySelectorAll('#viewTabs .tab').forEach(t => t.setAttribute('aria-pressed', t.dataset.view === view));
+  ['log', 'dash', 'records', 'setup'].forEach(v => $('view-' + v).hidden = v !== view);
+
+  $('classRow').innerHTML = cls.length
+    ? `<span class="muted small">Class:</span>` + cls.map(c =>
+        `<button class="tab" data-cls="${esc(c)}" aria-pressed="${c === state.ui.cls}">${esc(c)} <span class="muted small">(${classStudents(c).length})</span></button>`).join('')
+    : `<span class="muted small">No classes yet. Upload a roster on the Setup tab.</span>`;
+
+  if (view === 'log') renderLog();
+  if (view === 'dash') renderDash();
+  if (view === 'records') renderRecords();
+  if (view === 'setup') renderSetup();
+  renderWidget();
+}
+function renderLogViews() {
+  if (view === 'log') renderLog();
+  if (view === 'dash') renderDash();
+  if (view === 'records') renderRecords();
+  renderWidget();
+}
+
+function legendHTML() {
+  return inds().map(i => `<span><span class="sw" style="background:${i.color}"></span>${i.icon} ${esc(i.name)}</span>`).join('')
+    + `<span>★ Positive</span><span class="muted">Tap = <b>CON</b> · Hold = <b>INT</b></span>`;
+}
+
+function renderLog() {
+  $('legend').innerHTML = legendHTML();
+  const list = classStudents(state.ui.cls);
+  $('grid').innerHTML = list.length ? list.map(s => {
+    const { first, last } = splitName(s.name);
+    return `<div class="card">
+      <div class="who"><div><span class="first">${esc(first)}</span><span class="last">${esc(last)}</span></div>
+        <div class="today" title="Today">${todayDots(s.id)}</div></div>
+      <div class="btns">${buttonsHTML(s)}</div></div>`;
+  }).join('') : `<div class="empty muted">No students in this class yet.</div>`;
+}
+
+/* ---------- Tally math (mirrors the spreadsheet's Tally tab) ---------- */
+function periodFilter(period) {
+  if (period === 'all') return () => true;
+  const ym = period === 'this' ? todayStr().slice(0, 7) : period;
+  return (l) => l.date.startsWith(ym);
+}
+function levelFor(con, int) {
+  const w = con + 2 * int;
+  if (w >= state.settings.intT) return 'INT';
+  if (w >= state.settings.conT) return 'CON';
+  return 'EXP';
+}
+function tallyFor(sid, period) {
+  const f = periodFilter(period);
+  const logs = state.logs.filter(l => l.sid === sid && f(l));
+  const per = {};
+  let score = 0;
+  for (const i of inds()) {
+    const con = logs.filter(l => l.ind === i.key && l.sev === 'CON').length;
+    const int = logs.filter(l => l.ind === i.key && l.sev === 'INT').length;
+    const level = levelFor(con, int);
+    per[i.key] = { con, int, level };
+    score += level === 'EXP' ? 3 : level === 'CON' ? 2 : 1;
+  }
+  score = score / inds().length;
+  const auto = score >= 2.5 ? 'EXP' : score >= 1.5 ? 'CON' : 'INT';
+  const override = state.overrides[`${sid}|${resolvePeriod(period)}`];
+  return { per, score, auto, final: override || auto, override, pos: logs.filter(l => l.sev === 'POS').length, logs };
+}
+const resolvePeriod = (p) => p === 'this' ? todayStr().slice(0, 7) : p;
+
+function renderDash() {
+  const months = [...new Set(state.logs.map(l => l.date.slice(0, 7)))].sort().reverse();
+  const cur = todayStr().slice(0, 7);
+  const opts = [['this', `This month (${monthLabel(cur)})`], ...months.filter(m => m !== cur).map(m => [m, monthLabel(m)]), ['all', 'Whole year']];
+  if (!opts.some(o => o[0] === state.ui.month)) state.ui.month = 'this';
+  $('monthSel').innerHTML = opts.map(([v, t]) => `<option value="${v}" ${v === state.ui.month ? 'selected' : ''}>${esc(t)}</option>`).join('');
+  $('dashTitle').textContent = `Class ${state.ui.cls ?? ''}`;
+  $('tCon').textContent = state.settings.conT; $('tCon2').textContent = state.settings.conT; $('tInt').textContent = state.settings.intT;
+
+  const list = classStudents(state.ui.cls);
+  const head = `<tr><th>Student</th>${inds().map(i => `<th title="${esc(i.name)}"><span class="ihead"><span class="sw" style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${i.color}"></span>${esc(i.short)}</span></th>`).join('')}<th>★</th><th>Overall</th></tr>`;
+  const rows = list.map(s => {
+    const t = tallyFor(s.id, state.ui.month);
+    return `<tr class="clickable" data-student="${s.id}"><td>${esc(s.name)}</td>` +
+      inds().map(i => { const c = t.per[i.key];
+        return `<td><span class="lvl ${c.level}">${c.level}</span>${c.con || c.int ? `<span class="cnt">${c.con}/${c.int}</span>` : ''}</td>`; }).join('') +
+      `<td>${t.pos ? `<span class="lvl POS">★${t.pos}</span>` : ''}</td>` +
+      `<td><span class="lvl ${t.final}">${t.final}</span>${t.override ? '<span class="cnt">(override)</span>' : `<span class="cnt">${t.score.toFixed(1)}</span>`}</td></tr>`;
+  }).join('');
+  $('tally').innerHTML = `<thead>${head}</thead><tbody>${rows || '<tr><td colspan="9" class="muted">No students.</td></tr>'}</tbody>`;
+  $('tally').insertAdjacentHTML('beforeend', `<caption class="muted small" style="caption-side:bottom;text-align:left;padding-top:6px">Small numbers are CON / INT counts.</caption>`);
+
+  const sel = state.ui.selStudent && studentById(state.ui.selStudent);
+  if (sel && sel.cls === state.ui.cls) renderStudentView(sel); else $('studentView').hidden = true;
+}
+
+function renderStudentView(s) {
+  const t = tallyFor(s.id, state.ui.month);
+  const periodName = state.ui.month === 'all' ? 'Whole year' : monthLabel(resolvePeriod(state.ui.month));
+  const rows = inds().map(i => { const c = t.per[i.key];
+    return `<tr><td><span class="ihead">${i.icon} ${esc(i.name)}</span></td><td><span class="lvl ${c.level}">${c.level}</span></td><td>${c.con} / ${c.int}</td><td>${esc(i.rubric[c.level])}</td></tr>`; }).join('');
+  const history = t.logs.slice().sort((a, b) => b.ts - a.ts).map(l => {
+    const i = indByKey(l.ind);
+    return `<tr><td>${l.date}</td><td>${l.sev === 'POS' ? '★' : esc(i?.name)}</td><td><span class="lvl ${l.sev}">${l.sev}</span></td><td>${esc(l.note)}</td></tr>`;
+  }).join('');
+  $('studentView').hidden = false;
+  $('studentView').innerHTML = `
+    <div class="row" style="justify-content:space-between">
+      <h2>${esc(s.name)} <span class="muted small">· ${esc(periodName)}</span></h2>
+      <div class="row no-print">
+        <label class="small">Final level
+          <select id="overrideSel">
+            <option value="">Auto (${t.auto})</option>
+            ${['EXP', 'CON', 'INT'].map(v => `<option ${t.override === v ? 'selected' : ''}>${v}</option>`).join('')}
+          </select></label>
+        <button class="btn" id="closeSV">Close</button>
+      </div>
+    </div>
+    <p>Final level: <span class="lvl ${t.final}">${t.final}</span> ${t.pos ? `· <span class="lvl POS">★ ${t.pos} positive</span>` : ''}</p>
+    <div class="table-wrap"><table><thead><tr><th>Indicator</th><th>Level</th><th>Flags (CON/INT)</th><th>What this means (from the rubric)</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <h3 style="margin:16px 0 6px;font-size:15px">Entries</h3>
+    <div class="table-wrap"><table><tbody>${history || '<tr><td class="muted">No entries this period.</td></tr>'}</tbody></table></div>`;
+  $('overrideSel').onchange = (e) => {
+    const k = `${s.id}|${resolvePeriod(state.ui.month)}`;
+    if (e.target.value) state.overrides[k] = e.target.value; else delete state.overrides[k];
+    save(); renderDash();
+  };
+  $('closeSV').onclick = () => { state.ui.selStudent = null; save(); renderDash(); };
+}
+
+function renderRecords() {
+  $('recTitle').textContent = `Class ${state.ui.cls ?? ''}`;
+  const ids = new Set(classStudents(state.ui.cls).map(s => s.id));
+  const logs = state.logs.filter(l => ids.has(l.sid)).sort((a, b) => b.ts - a.ts);
+  $('recTable').innerHTML = `<thead><tr><th>Date</th><th>Time</th><th>Student</th><th>Indicator</th><th>Severity</th><th>Note</th><th></th></tr></thead><tbody>` +
+    (logs.map(l => {
+      const s = studentById(l.sid); const i = indByKey(l.ind); const d = new Date(l.ts);
+      return `<tr><td>${l.date} <span class="muted small">${DAY_NAMES[d.getDay()]}</span></td>
+        <td class="muted small">${l.imported ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+        <td>${esc(s?.name)}</td><td>${l.sev === 'POS' ? '★ Positive' : `${i?.icon ?? ''} ${esc(i?.name)}`}</td>
+        <td><select data-sev="${l.id}">${['CON', 'INT', 'POS'].map(v => `<option ${v === l.sev ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td><input type="text" data-note="${l.id}" value="${esc(l.note)}" placeholder="add note…" style="width:100%;min-width:140px"></td>
+        <td><button class="btn danger" data-del="${l.id}" title="Delete entry">✕</button></td></tr>`;
+    }).join('') || '<tr><td colspan="7" class="muted">No entries yet for this class.</td></tr>') + '</tbody>';
+}
+
+function renderSetup() {
+  $('welcome').hidden = state.students.length > 0 && state.logs.length > 3;
+  const cls = classes();
+  $('rosterList').innerHTML = cls.length ? cls.map(c => `
+    <details ${c === state.ui.cls ? 'open' : ''}>
+      <summary>Class ${esc(c)} — ${classStudents(c).length} students</summary>
+      <div class="row" style="margin:8px 0">
+        <button class="btn" data-rename="${esc(c)}">Rename class</button>
+        <button class="btn" data-addstu="${esc(c)}">+ Add student</button>
+        <button class="btn danger" data-delcls="${esc(c)}">Delete class</button>
+      </div>
+      <table><tbody>${classStudents(c).map(s => `<tr><td>${esc(s.name)}</td><td style="width:1%"><button class="btn danger" data-delstu="${s.id}" title="Remove student">✕</button></td></tr>`).join('')}</tbody></table>
+    </details>`).join('') : '<p class="muted">No students yet.</p>';
+
+  $('thCon').value = state.settings.conT;
+  $('thInt').value = state.settings.intT;
+  $('indEdit').innerHTML = inds().map((i, n) => `
+    <div style="border-bottom:1px solid var(--border);padding:8px 0">
+      <div class="ind-edit">
+        <input type="color" value="${i.color}" data-ind="${n}" data-f="color" title="Colour">
+        <input type="text" value="${esc(i.icon)}" data-ind="${n}" data-f="icon" title="Icon (emoji)" style="text-align:center">
+        <input type="text" value="${esc(i.name)}" data-ind="${n}" data-f="name" title="Full name">
+        <input type="text" value="${esc(i.short)}" data-ind="${n}" data-f="short" title="Short label">
+      </div>
+      ${['EXP', 'CON', 'INT'].map(l => `<label class="field small"><span class="lvl ${l}">${l}</span>
+        <input type="text" value="${esc(i.rubric[l])}" data-ind="${n}" data-f="rubric.${l}" style="width:100%"></label>`).join('')}
+    </div>`).join('');
+}
+
+/* =====================================================================
+   Pop-out widget: Document Picture-in-Picture (Chrome/Edge 116+) keeps a
+   small window on top of everything, including slides. Fallback: popup.
+   ===================================================================== */
+async function openWidget() {
+  if (!state.students.length) { showToast('Add a roster first (Setup tab).'); return; }
+  if (widget) { widget.win.focus(); return; }
+  let win;
+  const size = { width: 380, height: 600 };
+  if ('documentPictureInPicture' in window) {
+    try { win = await documentPictureInPicture.requestWindow(size); } catch (e) { win = null; }
+  }
+  if (!win) {
+    win = window.open('', 'effortWidget', `width=${size.width},height=${size.height}`);
+    if (!win) { showToast('Pop-up blocked. Please allow pop-ups for this page.'); return; }
+    win.document.open(); win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body></body></html>'); win.document.close();
+    showToast('Your browser has no always-on-top mode. Opened a normal pop-up window.');
+  }
+  const doc = win.document;
+  doc.title = 'Effort Tracker widget';
+  document.querySelectorAll('style').forEach(st => doc.head.appendChild(st.cloneNode(true)));
+  doc.documentElement.dataset.theme = document.documentElement.dataset.theme || '';
+  if (!doc.documentElement.dataset.theme) delete doc.documentElement.dataset.theme;
+  doc.body.className = 'widget';
+  doc.body.innerHTML = `<div class="w-head"><select id="wCls"></select><span class="hint">tap CON · hold INT</span></div>
+    <div class="w-list" id="wList"></div><div class="toast" id="toast" hidden></div>`;
+  widget = { win, doc };
+  bindPress(doc.body);
+  doc.getElementById('wCls').addEventListener('change', (e) => { state.ui.cls = e.target.value; save(); renderAll(); });
+  win.addEventListener('pagehide', () => { widget = null; });
+  renderWidget();
+}
+function renderWidget() {
+  if (!widget) return;
+  const doc = widget.doc;
+  doc.getElementById('wCls').innerHTML = classes().map(c => `<option ${c === state.ui.cls ? 'selected' : ''}>${esc(c)}</option>`).join('');
+  doc.getElementById('wList').innerHTML = classStudents(state.ui.cls).map(s => {
+    const n = todayDotsCount(s.id);
+    return `<div class="w-row"><div class="name" title="${esc(s.name)}">${esc(shortName(s.name))}${n ? `<small>${n}</small>` : ''}</div>${buttonsHTML(s)}</div>`;
+  }).join('');
+}
+function todayDotsCount(sid) {
+  const t = todayStr();
+  const l = state.logs.filter(x => x.sid === sid && x.date === t);
+  const neg = l.filter(x => x.sev !== 'POS').length, pos = l.length - neg;
+  return [neg ? `⚑${neg}` : '', pos ? `★${pos}` : ''].filter(Boolean).join(' ');
+}
+
+/* =====================================================================
+   Import: .xlsx / .csv rosters (and Daily Log from the original workbook)
+   ===================================================================== */
+function findHeader(rows, test) {
+  for (let r = 0; r < Math.min(rows.length, 30); r++) {
+    const c = (rows[r] || []).findIndex(v => typeof v === 'string' && test(v.trim().toLowerCase()));
+    if (c >= 0) return { r, c };
+  }
+  return null;
+}
+function excelDateToYmd(v) {
+  if (typeof v === 'number') {                  // Excel serial date → calendar date (timezone-safe)
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  }
+  const d = new Date(v);
+  return isNaN(d) ? null : ymd(d);
+}
+function addStudent(name, cls) {
+  name = String(name).trim().replace(/\s+/g, ' ');
+  cls = String(cls || '').trim() || 'Class 1';
+  if (!name) return null;
+  let s = state.students.find(x => x.name.toLowerCase() === name.toLowerCase() && x.cls === cls);
+  if (!s) { s = { id: uid(), name, cls }; state.students.push(s); }
+  return s;
+}
+
+async function importFiles(files) {
+  const fallback = $('fallbackClass').value.trim();
+  let added = 0, logs = 0;
+  for (const f of files) {
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+    const baseName = f.name.replace(/\.[^.]+$/, '');
+    // Roster: first sheet that has a "student"/"name" header column
+    let rosterDone = false;
+    for (const sn of wb.SheetNames) {
+      if (/log|tally|view|rubric|read ?me/i.test(sn)) continue;
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, blankrows: false });
+      const h = findHeader(rows, v => /^(student( name)?|name|full name|student)$/.test(v) || v === 'student name');
+      if (!h) continue;
+      const classCol = (rows[h.r] || []).findIndex(v => typeof v === 'string' && /class|period|section|group|block/i.test(v));
+      for (let r = h.r + 1; r < rows.length; r++) {
+        const name = rows[r]?.[h.c];
+        if (!name || typeof name !== 'string') continue;
+        const before = state.students.length;
+        addStudent(name, classCol >= 0 ? (rows[r][classCol] || fallback || 'Unassigned') : (fallback || baseName));
+        if (state.students.length > before) added++;
+      }
+      rosterDone = true;
+      break;
+    }
+    // Daily Log (from the original Effort Tracker workbook)
+    const logSheet = wb.SheetNames.find(n => /daily log/i.test(n));
+    if (logSheet) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[logSheet], { header: 1, raw: true, blankrows: false });
+      const h = findHeader(rows, v => v === 'date');
+      if (h) {
+        const hdr = rows[h.r].map(v => String(v ?? '').toLowerCase());
+        const ci = { date: h.c, stu: hdr.findIndex(v => v.startsWith('student')), ind: hdr.findIndex(v => v.startsWith('indicator')),
+                     sev: hdr.findIndex(v => v.startsWith('severity')), note: hdr.findIndex(v => v.startsWith('note')) };
+        for (let r = h.r + 1; r < rows.length; r++) {
+          const row = rows[r]; if (!row) continue;
+          const date = excelDateToYmd(row[ci.date]);
+          const s = state.students.find(x => x.name.toLowerCase() === String(row[ci.stu] ?? '').trim().toLowerCase());
+          const sev = String(row[ci.sev] ?? '').trim().toUpperCase();
+          const ind = sev === 'POS' ? (inds().find(i => i.name.toLowerCase() === String(row[ci.ind] ?? '').trim().toLowerCase())?.key || 'pos')
+                                    : inds().find(i => i.name.toLowerCase() === String(row[ci.ind] ?? '').trim().toLowerCase())?.key;
+          if (!date || !s || !ind || !['CON', 'INT', 'POS'].includes(sev)) continue;
+          const dup = state.logs.some(l => l.imported && l.sid === s.id && l.date === date && l.ind === ind && l.sev === sev);
+          if (dup) continue;
+          const [y, m, d] = date.split('-').map(Number);
+          state.logs.push({ id: uid(), ts: new Date(y, m - 1, d, 12).getTime(), date, sid: s.id, ind, sev, note: String(row[ci.note] ?? '').trim(), imported: true });
+          logs++;
+        }
+      }
+    }
+    if (!rosterDone && !logSheet) showToast(`Couldn't find a "Student" or "Name" column in ${esc(f.name)}`);
+  }
+  save();
+  if (!state.ui.cls) state.ui.cls = classes()[0];
+  renderAll();
+  showToast(`Imported ${added} students${logs ? ` and ${logs} log entries` : ''} ✓`);
+}
+
+function importPaste() {
+  const fallback = $('fallbackClass').value.trim() || 'Class 1';
+  let added = 0;
+  for (const line of $('pasteBox').value.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parts = line.split(/\t|;/);
+    const before = state.students.length;
+    addStudent(parts[0], parts[1] || fallback);
+    if (state.students.length > before) added++;
+  }
+  $('pasteBox').value = '';
+  save(); renderAll(); showToast(`Added ${added} students ✓`);
+}
+
+function loadDemo() {
+  ['Rivera, Ana', 'Okafor, Chidi', 'Nakamura, Yui', 'Silva, Pedro', 'Haddad, Layla', 'Costa, Bruno',
+   'Müller, Lena', 'Santos, Gabriel', 'Kim, Min-jun', 'Oliveira, Sofia', 'Park, Ethan', 'Ferreira, Julia']
+    .forEach(n => addStudent(n, 'Demo'));
+  state.ui.cls = 'Demo'; view = 'log'; state.ui.view = 'log';
+  save(); renderAll(); showToast('Demo class loaded. Try tapping a button!');
+}
+
+/* ---------- Export ---------- */
+function csvCell(v) { v = String(v ?? ''); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
+function exportCSV(onlyClass) {
+  const ids = onlyClass ? new Set(classStudents(state.ui.cls).map(s => s.id)) : null;
+  const logs = state.logs.filter(l => !ids || ids.has(l.sid)).sort((a, b) => a.ts - b.ts);
+  const lines = [['Date', 'Student', 'Indicator', 'Severity', 'Note', 'Class', 'Time']];
+  for (const l of logs) {
+    const s = studentById(l.sid); const i = indByKey(l.ind);
+    lines.push([l.date, s?.name, l.sev === 'POS' && !i ? '' : i?.name, l.sev, l.note, s?.cls,
+                l.imported ? '' : new Date(l.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })]);
+  }
+  download(`effort-log-${onlyClass ? state.ui.cls + '-' : ''}${todayStr()}.csv`, lines.map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+}
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + text], { type }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ---------- Theme ---------- */
+function applyTheme() {
+  if (state.ui.theme) document.documentElement.dataset.theme = state.ui.theme;
+  else delete document.documentElement.dataset.theme;
+}
+
+/* =====================================================================
+   Wire up events
+   ===================================================================== */
+bindPress(document.body);
+
+$('viewTabs').addEventListener('click', (e) => {
+  const t = e.target.closest('[data-view]'); if (!t) return;
+  view = t.dataset.view; state.ui.view = view; save(); renderAll();
+});
+$('classRow').addEventListener('click', (e) => {
+  const t = e.target.closest('[data-cls]'); if (!t) return;
+  state.ui.cls = t.dataset.cls; state.ui.selStudent = null; save(); renderAll();
+});
+$('popBtn').onclick = openWidget;
+$('monthSel').onchange = (e) => { state.ui.month = e.target.value; save(); renderDash(); };
+$('tally').addEventListener('click', (e) => {
+  const tr = e.target.closest('[data-student]'); if (!tr) return;
+  state.ui.selStudent = tr.dataset.student; save(); renderDash();
+  $('studentView').scrollIntoView({ behavior: 'smooth' });
+});
+
+// Records: edit severity/note, delete
+$('recTable').addEventListener('change', (e) => {
+  const sevId = e.target.dataset.sev, noteId = e.target.dataset.note;
+  const l = state.logs.find(x => x.id === (sevId || noteId)); if (!l) return;
+  if (sevId) {
+    if (e.target.value === 'POS') { l.sev = 'POS'; }
+    else { l.sev = e.target.value; if (l.ind === 'pos') l.ind = inds()[0].key; }
+  }
+  if (noteId) l.note = e.target.value.trim();
+  save(); showToast('Saved ✓');
+});
+$('recTable').addEventListener('click', (e) => {
+  const id = e.target.closest('[data-del]')?.dataset.del; if (!id) return;
+  if (!confirm('Delete this entry?')) return;
+  state.logs = state.logs.filter(l => l.id !== id); save(); renderRecords(); renderWidget();
+});
+$('csvBtn').onclick = () => exportCSV(true);
+$('csvAllBtn').onclick = () => exportCSV(false);
+
+// Setup
+$('rosterFile').onchange = (e) => { if (e.target.files.length) importFiles([...e.target.files]).catch(err => showToast('Could not read that file: ' + esc(err.message))); e.target.value = ''; };
+$('pasteBtn').onclick = importPaste;
+$('demoBtn').onclick = loadDemo;
+$('thCon').onchange = (e) => { state.settings.conT = Math.max(1, +e.target.value || 3); save(); };
+$('thInt').onchange = (e) => { state.settings.intT = Math.max(1, +e.target.value || 5); save(); };
+$('indEdit').addEventListener('change', (e) => {
+  const n = e.target.dataset.ind; if (n === undefined) return;
+  const f = e.target.dataset.f; const ind = inds()[n];
+  if (f.startsWith('rubric.')) ind.rubric[f.split('.')[1]] = e.target.value; else ind[f] = e.target.value;
+  save(); showToast('Saved ✓'); renderWidget();
+});
+$('resetInd').onclick = () => { if (confirm('Reset indicator names, colours and rubric text?')) { state.settings.indicators = structuredClone(DEFAULT_INDICATORS); save(); renderAll(); } };
+$('rosterList').addEventListener('click', (e) => {
+  const d = e.target.dataset;
+  if (d.delstu) {
+    const s = studentById(d.delstu);
+    const n = state.logs.filter(l => l.sid === s.id).length;
+    if (!confirm(`Remove ${s.name}${n ? ` and their ${n} log entries` : ''}?`)) return;
+    state.students = state.students.filter(x => x.id !== s.id);
+    state.logs = state.logs.filter(l => l.sid !== s.id);
+  } else if (d.rename) {
+    const nn = prompt('New class name:', d.rename); if (!nn || !nn.trim()) return;
+    state.students.forEach(s => { if (s.cls === d.rename) s.cls = nn.trim(); });
+    if (state.ui.cls === d.rename) state.ui.cls = nn.trim();
+  } else if (d.addstu) {
+    const nn = prompt('Student name (e.g. "Last, First"):'); if (!nn) return;
+    addStudent(nn, d.addstu);
+  } else if (d.delcls) {
+    if (!confirm(`Delete class ${d.delcls}, all its students and their log entries?`)) return;
+    const ids = new Set(classStudents(d.delcls).map(s => s.id));
+    state.students = state.students.filter(s => !ids.has(s.id));
+    state.logs = state.logs.filter(l => !ids.has(l.sid));
+  } else return;
+  save(); renderAll();
+});
+$('backupBtn').onclick = () => download(`effort-tracker-backup-${todayStr()}.json`, JSON.stringify(state, null, 1), 'application/json');
+$('restoreFile').onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const s = JSON.parse((await f.text()).replace(/^﻿/, ''));
+    if (!s.students || !s.logs) throw new Error('Not a backup file');
+    if (!confirm(`Replace current data with this backup (${s.students.length} students, ${s.logs.length} entries)?`)) return;
+    state = { ...freshState(), ...s }; save(); renderAll(); showToast('Backup restored ✓');
+  } catch (err) { showToast('Could not restore: ' + esc(err.message)); }
+  e.target.value = '';
+};
+$('themeBtn').onclick = () => {
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const cur = state.ui.theme || (dark ? 'dark' : 'light');
+  state.ui.theme = cur === 'dark' ? 'light' : 'dark'; save(); applyTheme();
+};
+$('wipeBtn').onclick = () => {
+  if (!confirm('Erase ALL students and entries on this device? Download a backup first!')) return;
+  if (!confirm('Are you sure? This cannot be undone.')) return;
+  state = freshState(); view = 'setup'; save(); renderAll();
+};
+
+// Keep "today" dots fresh if the page stays open past midnight
+setInterval(() => { if (view === 'log') renderLog(); renderWidget(); }, 5 * 60 * 1000);
+
+renderAll();
+</script>
+</body>
+</html>
