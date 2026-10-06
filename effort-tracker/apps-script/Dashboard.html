@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('Common'); ?>
+  <style>
+    main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 2px solid var(--line); flex-wrap: wrap; }
+    .tab { border: 0; background: none; padding: 10px 14px; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -2px; }
+    .tab.on { color: var(--navy); border-bottom-color: var(--navy); }
+    .tab .count { background: var(--warn-bg); color: var(--warn); border-radius: 999px; padding: 1px 8px; font-size: 13px; margin-left: 4px; }
+    h2 { color: var(--navy); font-size: 20px; margin: 22px 0 10px; }
+    h2 small { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 6px; }
+    .people { display: grid; gap: 10px; }
+    .person { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--card); border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px; border-left: 6px solid var(--line); }
+    .person.contact { border-left-color: var(--warn); }
+    .person.decide, .person.intervention { border-left-color: var(--bad); }
+    .person.monitor { border-left-color: var(--navy); }
+    .person .who { flex: 1; min-width: 200px; }
+    .person .who b { font-size: 17px; }
+    .person .who div { color: var(--muted); font-size: 14px; }
+    .person .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+    .empty { color: var(--muted); padding: 6px 0; }
+    .stage { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+    .st-ok { background: var(--ok-bg); color: var(--ok); }
+    .st-contact { background: var(--warn-bg); color: var(--warn); }
+    .st-monitor { background: var(--lavender); color: var(--navy); }
+    .st-decide, .st-intervention { background: var(--bad-bg); color: var(--bad); }
+    .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    select, input, textarea { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; }
+    .scroll { overflow-x: auto; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover td { background: var(--lavender-soft); }
+    td.zero { color: var(--line); }
+
+    .modal { position: fixed; inset: 0; background: rgba(20, 21, 50, .55); z-index: 20; display: grid; place-items: center; padding: 16px; }
+    .sheet { background: var(--card); border-radius: 18px; width: min(860px, 100%); max-height: 92vh; overflow: auto; padding: 22px; }
+    .sheet h3 { margin: 0; font-size: 24px; color: var(--navy); }
+    .sheet-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+    .rub td:first-child { white-space: nowrap; font-weight: 600; }
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .field label { font-weight: 600; font-size: 14px; }
+
+    .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+    .field textarea { min-height: 120px; }
+    .course { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .class-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .class-row .name { flex: 1; min-width: 200px; font-weight: 700; }
+
+    @media print {
+      .bar, .tabs, .no-print, #attention, #students, #classes { display: none !important; }
+      body { background: #fff; }
+      .modal { position: static; background: none; padding: 0; display: block; }
+      .sheet { max-height: none; box-shadow: none; width: 100%; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="<?= baseUrl ?>">
+      <div class="brand-c">C</div>
+      <div><div class="brand-name">CHAPEL</div><div class="brand-sub">Effort Tracker</div></div>
+    </a>
+    <div class="bar-title"></div>
+    <nav class="bar-nav">
+      <a href="<?= baseUrl ?>">Log entries</a>
+      <a class="current" href="<?= baseUrl ?>?page=dashboard">Dashboard</a>
+      <a id="sheetLink" target="_blank" href="#">Google Sheet</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="tabs">
+      <button class="tab on" data-tab="attention">Needs attention <span class="count hidden" id="attnCount"></span></button>
+      <button class="tab" data-tab="students">All students</button>
+      <button class="tab" data-tab="classes">Classes</button>
+    </div>
+
+    <section id="attention">
+      <h2>Contact home <small>reached concern</small></h2><div class="people" id="listContact"></div>
+      <h2>Decide next step <small>still concerning after you contacted home</small></h2><div class="people" id="listDecide"></div>
+      <h2>Contacted home <small>watching for change</small></h2><div class="people" id="listMonitor"></div>
+      <h2>Intervention</h2><div class="people" id="listIntervention"></div>
+      <h2>Getting close <small>one entry away from concern</small></h2><div class="people" id="listClose"></div>
+      <p class="muted" id="periodNote"></p>
+    </section>
+
+    <section id="students" class="hidden">
+      <div class="filters">
+        <select id="classFilter" aria-label="Class"></select>
+        <input id="search" placeholder="Find a student" aria-label="Find a student">
+      </div>
+      <div class="card scroll"><table class="data" id="studentTable"></table></div>
+    </section>
+
+    <section id="classes" class="hidden">
+      <div class="grid2">
+        <div class="card">
+          <h2 style="margin-top:0">Import from Google Classroom</h2>
+          <button class="btn" id="loadCourses">Show my Google Classroom classes</button>
+          <div id="courses"></div>
+        </div>
+        <div class="card">
+          <h2 style="margin-top:0">Or type a class in</h2>
+          <div class="field"><label for="newClassName">Class name</label><input id="newClassName" placeholder="Grade 9 English - A"></div>
+          <div class="field"><label for="newClassNames">Students (one per line)</label><textarea id="newClassNames" placeholder="Ana Souza&#10;Silva, Maria"></textarea></div>
+          <button class="btn" id="createClass">Create class</button>
+        </div>
+      </div>
+      <h2>My classes <small>switched-off classes are hidden on the logging screen</small></h2>
+      <div class="card" id="classList"></div>
+      <div id="rosterBox" class="hidden">
+        <h2 id="rosterTitle"></h2>
+        <div class="card scroll">
+          <table class="data" id="rosterTable"></table>
+          <div class="field" style="margin-top:16px"><label for="addNames">Add students (one per line)</label><textarea id="addNames" style="min-height:70px"></textarea></div>
+          <button class="btn btn-soft" id="addStudentsBtn">Add students</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal hidden" id="modal"><div class="sheet" id="sheet"></div></div>
+
+<script>
+  var STAGE_LABEL = { ok: 'On track', contact: 'Contact home', monitor: 'Contacted home', decide: 'Decide next step', intervention: 'Intervention' };
+  var FOLLOW_LABEL = { contacted: 'Contacted home', intervention: 'Move to intervention', ok: 'Back on track' };
+  var D = { data: null, rosterClass: null };
+
+  function load() {
+    return api('getDashboard').then(function (d) {
+      D.data = d;
+      $('#sheetLink').href = d.sheetUrl;
+      fillClassFilter();
+      renderAttention();
+      renderStudents();
+    }).catch(function (e) { toast(e.message, true); });
+  }
+
+  document.querySelectorAll('.tab').forEach(function (b) {
+    b.onclick = function () {
+      document.querySelectorAll('.tab').forEach(function (x) { x.classList.toggle('on', x === b); });
+      ['attention', 'students', 'classes'].forEach(function (id) { $('#' + id).classList.toggle('hidden', id !== b.dataset.tab); });
+      if (b.dataset.tab === 'classes') loadClasses();
+    };
+  });
+
+  function daysAgo(ms) {
+    var d = Math.floor((Date.now() - ms) / 864e5);
+    return d <= 0 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago';
+  }
+
+  function stageChip(stage) { return '<span class="stage st-' + stage + '">' + STAGE_LABEL[stage] + '</span>'; }
+
+  /* ---------- Needs attention ---------- */
+
+  function renderAttention() {
+    var d = D.data, t = d.settings.threshold, w = d.settings.windowDays;
+    var by = function (stage) { return d.students.filter(function (s) { return s.stage === stage; }); };
+    var person = function (s, detail, buttons) {
+      return '<div class="person ' + s.stage + '"><div class="who"><b>' + esc(s.name) + '</b><div>' + esc(s.classes) +
+        ' &middot; ' + detail + '</div></div><div class="btns">' + buttons.map(function (a) {
+          return '<button class="btn btn-small' + (a === 'contacted' || a === 'intervention' ? '' : ' btn-soft') +
+            '" data-follow="' + a + '" data-id="' + esc(s.id) + '">' + FOLLOW_LABEL[a] + '</button>';
+        }).join('') + '<button class="btn btn-small btn-soft" data-view="' + esc(s.id) + '">View</button></div></div>';
+    };
+    var fill = function (sel, list, fn, emptyText) {
+      $(sel).innerHTML = list.length ? list.map(fn).join('') : '<p class="empty">' + emptyText + '</p>';
+    };
+    var contact = by('contact'), decide = by('decide');
+    fill('#listContact', contact, function (s) { return person(s, 'reached concern ' + daysAgo(s.since), ['contacted']); }, 'Nobody right now.');
+    fill('#listDecide', decide, function (s) {
+      return person(s, s.recent + ' entries since you contacted home', ['intervention', 'ok']);
+    }, 'Nobody right now.');
+    fill('#listMonitor', by('monitor'), function (s) {
+      return person(s, 'contacted ' + daysAgo(s.since) + ' &middot; ' + s.recent + ' of ' + t + ' entries since', ['ok', 'intervention']);
+    }, 'Nobody right now.');
+    fill('#listIntervention', by('intervention'), function (s) { return person(s, 'since ' + daysAgo(s.since), ['ok']); }, 'Nobody right now.');
+    fill('#listClose', d.students.filter(function (s) { return s.stage === 'ok' && s.recent === t - 1 && t > 1; }), function (s) {
+      return person(s, s.recent + ' entries in the last ' + w + ' days', []);
+    }, 'Nobody right now.');
+    var n = contact.length + decide.length;
+    $('#attnCount').textContent = n;
+    $('#attnCount').classList.toggle('hidden', !n);
+    $('#periodNote').textContent = d.settings.periodStart
+      ? 'Counting entries since ' + new Date(d.settings.periodStart).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) +
+        ' (Marking period starts, in the Settings tab).'
+      : 'Counting all entries. Set "Marking period starts" in the Settings tab to start fresh each quarter.';
+  }
+
+  document.addEventListener('click', function (e) {
+    var f = e.target.closest('[data-follow]');
+    if (f) return askFollowUp(f.dataset.id, f.dataset.follow);
+    var v = e.target.closest('[data-view]');
+    if (v) return openStudent(v.dataset.view);
+    var tr = e.target.closest('#studentTable tr.clickable');
+    if (tr) return openStudent(tr.dataset.id);
+  });
+
+  function askFollowUp(studentId, action) {
+    var s = D.data.students.filter(function (x) { return x.id === studentId; })[0];
+    var hint = { contacted: 'e.g. Emailed mother; spoke to father by phone', intervention: 'e.g. Referred to counselor', ok: 'e.g. Big improvement since the call' }[action];
+    openSheet('<h3>' + FOLLOW_LABEL[action] + ': ' + esc(s.name) + '</h3>' +
+      '<div class="field" style="margin-top:14px"><label for="fuNote">Note (optional)</label><textarea id="fuNote" placeholder="' + esc(hint) + '"></textarea></div>' +
+      '<div class="btns" style="display:flex;gap:8px"><button class="btn" id="fuSave">Save</button><button class="btn btn-soft" data-close>Cancel</button></div>');
+    $('#fuSave').onclick = function () {
+      this.disabled = true;
+      api('recordFollowUp', studentId, action, $('#fuNote').value).then(function (r) {
+        closeSheet(); toast(r.message); load();
+      }).catch(function (e) { toast(e.message, true); });
+    };
+  }
+
+  /* ---------- One student ---------- */
+
+  function openStudent(id) {
+    api('getStudentDetail', id).then(function (s) {
+      var level = function (r) { return r.count === 0 ? 'EXP' : s.stage === 'intervention' ? 'INT' : 'CON'; };
+      var wording = function (r) { var l = level(r); return l === 'EXP' ? r.expected : l === 'INT' ? r.intervention : r.concern; };
+      var buttons = { ok: ['contacted'], contact: ['contacted'], monitor: ['ok', 'intervention'], decide: ['intervention', 'ok'], intervention: ['ok'] }[s.stage];
+      openSheet('<div class="sheet-head"><div><h3>' + esc(s.name) + '</h3><div style="margin-top:6px">' + stageChip(s.stage) +
+        ' <span class="muted">' + s.total + ' entries this period &middot; ' + s.recent + ' counting toward the next step</span></div></div>' +
+        '<div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap">' + buttons.map(function (a) {
+          return '<button class="btn btn-small" data-follow="' + a + '" data-id="' + esc(s.id) + '">' + FOLLOW_LABEL[a] + '</button>';
+        }).join('') + '<button class="btn btn-small btn-soft" onclick="window.print()">Print</button>' +
+        '<button class="btn btn-small btn-soft" data-close>Close</button></div></div>' +
+        '<h2>Rubric</h2><table class="data rub"><thead><tr><th>Indicator</th><th class="num">Entries</th><th>Level</th><th>What this means</th></tr></thead><tbody>' +
+        s.rubric.map(function (r) {
+          return '<tr><td>' + esc(r.icon) + ' ' + esc(r.name) + '</td><td class="num">' + r.count + '</td><td>' + level(r) + '</td><td>' + esc(wording(r)) + '</td></tr>';
+        }).join('') + '</tbody></table>' +
+        '<h2>Follow-up</h2>' + (s.follows.length ? '<table class="data"><tbody>' + s.follows.map(function (f) {
+          return '<tr><td>' + dayLabel(f.date) + '</td><td><b>' + esc(f.action) + '</b></td><td>' + esc(f.note) + '</td></tr>';
+        }).join('') + '</tbody></table>' : '<p class="empty">Nothing yet.</p>') +
+        '<h2>Entries</h2>' + (s.entries.length ? '<table class="data"><thead><tr><th>Day</th><th>Indicator</th><th>Note</th><th>Class</th><th class="no-print"></th></tr></thead><tbody>' +
+        s.entries.map(function (l) {
+          return '<tr><td>' + dayLabel(l.date) + ' ' + timeOfDay(l.date) + '</td><td>' + esc(l.indicator) + '</td><td>' + esc(l.note) + '</td><td>' + esc(l.className) +
+            '</td><td class="no-print"><button class="btn btn-small btn-danger" data-del="' + esc(l.entryId) + '">Delete</button></td></tr>';
+        }).join('') + '</tbody></table>' : '<p class="empty">No entries this marking period.</p>'));
+      $('#sheet').querySelectorAll('[data-del]').forEach(function (b) {
+        b.onclick = function () {
+          if (!confirm('Delete this entry?')) return;
+          api('deleteEntry', b.dataset.del).then(function (r) { toast(r.message); load(); openStudent(id); })
+            .catch(function (e) { toast(e.message, true); });
+        };
+      });
+    }).catch(function (e) { toast(e.message, true); });
+  }
+
+  function openSheet(html) { $('#sheet').innerHTML = html; $('#modal').classList.remove('hidden'); }
+  function closeSheet() { $('#modal').classList.add('hidden'); $('#sheet').innerHTML = ''; }
+  $('#modal').addEventListener('click', function (e) { if (e.target.id === 'modal' || e.target.closest('[data-close]')) closeSheet(); });
+
+  /* ---------- All students ---------- */
+
+  function fillClassFilter() {
+    var cur = $('#classFilter').value || '';
+    $('#classFilter').innerHTML = '<option value="">All classes</option>' + D.data.classes.map(function (c) {
+      return '<option>' + esc(c) + '</option>';
+    }).join('');
+    $('#classFilter').value = cur;
+  }
+  $('#classFilter').onchange = renderStudents;
+  $('#search').oninput = renderStudents;
+
+  function renderStudents() {
+    var d = D.data, cls = $('#classFilter').value, q = $('#search').value.trim().toLowerCase();
+    var list = d.students.filter(function (s) {
+      return (!cls || s.classes.split(', ').indexOf(cls) >= 0) && (!q || s.name.toLowerCase().indexOf(q) >= 0);
+    });
+    $('#studentTable').innerHTML = '<thead><tr><th>Student</th><th>Class</th><th>Status</th><th class="num">Last ' + d.settings.windowDays +
+      ' days</th><th class="num">This period</th>' + d.rubric.map(function (r) {
+        return '<th class="num" title="' + esc(r.name) + '">' + esc(r.icon) + '</th>';
+      }).join('') + '<th>Last entry</th></tr></thead><tbody>' + (list.length ? list.map(function (s) {
+        return '<tr class="clickable" data-id="' + esc(s.id) + '"><td><b>' + esc(s.name) + '</b></td><td>' + esc(s.classes) + '</td><td>' +
+          stageChip(s.stage) + '</td><td class="num">' + s.recent + '</td><td class="num">' + s.total + '</td>' + d.rubric.map(function (r) {
+            var n = s.byIndicator[r.name] || 0;
+            return '<td class="num' + (n ? '' : ' zero') + '">' + n + '</td>';
+          }).join('') + '<td>' + (s.lastEntry ? daysAgo(s.lastEntry) : '') + '</td></tr>';
+      }).join('') : '<tr><td colspan="' + (6 + d.rubric.length) + '" class="empty">No students yet. Add classes on the Classes tab.</td></tr>') + '</tbody>';
+  }
+
+  /* ---------- Classes ---------- */
+
+  function loadClasses() {
+    return api('getSetupData').then(function (cs) {
+      $('#classList').innerHTML = cs.length ? cs.map(function (c) {
+        return '<div class="class-row" data-id="' + esc(c.classId) + '">' +
+          '<input class="name" data-f="name" value="' + esc(c.name) + '" aria-label="Class name">' +
+          '<span class="muted">' + c.count + ' students &middot; ' + esc(c.source) + '</span>' +
+          '<label><input type="checkbox" data-f="active"' + (c.active ? ' checked' : '') + '> Show when logging</label>' +
+          (c.source === 'Google Classroom' ? '<button class="btn btn-soft btn-small" data-act="sync">Sync with Classroom</button>' : '') +
+          '<button class="btn btn-small" data-act="roster">Students</button></div>';
+      }).join('') : '<p class="empty">No classes yet. Import them from Google Classroom or type one in above.</p>';
+    }).catch(function (e) { toast(e.message, true); });
+  }
+
+  $('#classList').addEventListener('change', function (e) {
+    var row = e.target.closest('.class-row'); if (!row) return;
+    var fields = {}; fields[e.target.dataset.f] = e.target.dataset.f === 'active' ? e.target.checked : e.target.value;
+    api('updateClass', row.dataset.id, fields).then(function (r) { toast(r.message); load(); }).catch(function (err) { toast(err.message, true); });
+  });
+
+  $('#classList').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    var id = b.closest('.class-row').dataset.id;
+    if (b.dataset.act === 'roster') openRoster(id, b.closest('.class-row').querySelector('.name').value);
+    if (b.dataset.act === 'sync') {
+      b.disabled = true; b.textContent = 'Syncing...';
+      api('syncClass', id).then(function (r) { toast(r.message); loadClasses(); load(); })
+        .catch(function (err) { toast(err.message, true); b.disabled = false; b.textContent = 'Sync with Classroom'; });
+    }
+  });
+
+  $('#loadCourses').onclick = function () {
+    var b = this; b.disabled = true; b.textContent = 'Asking Google Classroom...';
+    api('listClassroomCourses').then(function (courses) {
+      b.disabled = false; b.textContent = 'Refresh list';
+      $('#courses').innerHTML = courses.length ? courses.map(function (c) {
+        return '<label class="course"><input type="checkbox" value="' + esc(c.id) + '"' + (c.imported ? ' disabled checked' : '') + '> ' +
+          esc(c.name) + (c.imported ? ' <span class="muted">(already imported)</span>' : '') + '</label>';
+      }).join('') + '<p><button class="btn" id="importBtn">Import selected classes</button></p>'
+        : '<p class="muted">No active Google Classroom classes found where you are a teacher.</p>';
+      var imp = $('#importBtn');
+      if (imp) imp.onclick = function () {
+        var ids = Array.prototype.map.call(document.querySelectorAll('#courses input:checked:not(:disabled)'), function (i) { return i.value; });
+        if (!ids.length) return toast('Tick at least one class.', true);
+        imp.disabled = true; imp.textContent = 'Importing...';
+        api('importClassroomCourses', ids).then(function (r) { toast(r.message); $('#courses').innerHTML = ''; loadClasses(); load(); })
+          .catch(function (err) { toast(err.message, true); imp.disabled = false; imp.textContent = 'Import selected classes'; });
+      };
+    }).catch(function (err) { b.disabled = false; b.textContent = 'Show my Google Classroom classes'; toast(err.message, true); });
+  };
+
+  $('#createClass').onclick = function () {
+    var b = this; b.disabled = true;
+    api('createTypedClass', $('#newClassName').value, $('#newClassNames').value).then(function (r) {
+      toast(r.message); b.disabled = false; $('#newClassName').value = ''; $('#newClassNames').value = '';
+      loadClasses(); load();
+    }).catch(function (err) { toast(err.message, true); b.disabled = false; });
+  };
+
+  function openRoster(classId, name) {
+    D.rosterClass = classId;
+    api('getRoster', classId).then(function (students) {
+      $('#rosterBox').classList.remove('hidden');
+      $('#rosterTitle').textContent = 'Students in ' + name;
+      $('#rosterTable').innerHTML = students.length ? '<thead><tr><th>First name</th><th>Last name</th><th></th></tr></thead><tbody>' +
+        students.map(function (s) {
+          return '<tr data-id="' + esc(s.id) + '"><td><input data-f="first" value="' + esc(s.first) + '" aria-label="First name"></td>' +
+            '<td><input data-f="last" value="' + esc(s.last) + '" aria-label="Last name"></td>' +
+            '<td><button class="btn btn-danger btn-small" data-act="remove">Remove from class</button></td></tr>';
+        }).join('') + '</tbody>' : '<tbody><tr><td class="empty">No students yet.</td></tr></tbody>';
+      $('#rosterBox').scrollIntoView({ behavior: 'smooth' });
+    }).catch(function (e) { toast(e.message, true); });
+  }
+
+  $('#rosterTable').addEventListener('change', function (e) {
+    var tr = e.target.closest('tr'); if (!tr) return;
+    var fields = {}; fields[e.target.dataset.f] = e.target.value;
+    api('updateStudent', tr.dataset.id, fields).then(function (r) { toast(r.message); load(); }).catch(function (err) { toast(err.message, true); });
+  });
+  $('#rosterTable').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act="remove"]'); if (!b) return;
+    if (!confirm('Remove this student from the class? Their past entries stay in the Log.')) return;
+    var name = $('#rosterTitle').textContent.replace('Students in ', '');
+    api('removeFromClass', D.rosterClass, b.closest('tr').dataset.id).then(function (r) {
+      toast(r.message); loadClasses(); load(); openRoster(D.rosterClass, name);
+    }).catch(function (err) { toast(err.message, true); });
+  });
+  $('#addStudentsBtn').onclick = function () {
+    var name = $('#rosterTitle').textContent.replace('Students in ', '');
+    api('addStudents', D.rosterClass, $('#addNames').value).then(function (r) {
+      toast(r.message); $('#addNames').value = ''; loadClasses(); load(); openRoster(D.rosterClass, name);
+    }).catch(function (e) { toast(e.message, true); });
+  };
+
+  load();
+</script>
+</body>
+</html>

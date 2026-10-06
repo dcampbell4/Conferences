@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('Common'); ?>
+  <style>
+    body { min-height: 100vh; user-select: none; -webkit-user-select: none; }
+    button { touch-action: manipulation; }
+    main { padding: 18px 20px 60px; max-width: 1400px; margin: 0 auto; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .hint { color: var(--muted); font-size: 17px; margin: 0; }
+    .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+    .legend span { display: inline-flex; gap: 5px; align-items: center; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+    .tile {
+      min-height: 86px; border: 2px solid transparent; border-radius: var(--radius); background: var(--card);
+      box-shadow: var(--shadow); padding: 10px 12px; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 6px; font-size: 21px; font-weight: 600; text-align: center;
+    }
+    .tile:active { transform: scale(.97); }
+    .dots { display: flex; gap: 4px; }
+    .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+    .dots i.on { background: var(--warn); }
+    .stage { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; }
+    .st-contact { background: var(--warn-bg); color: var(--warn); }
+    .st-monitor { background: var(--lavender); color: var(--navy); }
+    .st-decide, .st-intervention { background: var(--bad-bg); color: var(--bad); }
+    .tile.st-border-contact { border-color: var(--warn); }
+    .tile.st-border-decide, .tile.st-border-intervention { border-color: var(--bad); }
+    body.private .dots, body.private .stage { display: none; }
+    body.private .tile { border-color: transparent !important; }
+
+    .modal { position: fixed; inset: 0; background: rgba(20, 21, 50, .55); z-index: 20; display: grid; place-items: center; padding: 16px; }
+    .sheet { background: var(--card); border-radius: 20px; width: min(620px, 100%); max-height: 92vh; overflow: auto; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+    .sheet h2 { margin: 0 0 4px; color: var(--navy); font-size: 26px; text-align: center; }
+    .sheet .sub { margin: 0 0 14px; text-align: center; color: var(--muted); }
+    .note { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 16px; user-select: text; -webkit-user-select: text; }
+    .inds { display: grid; gap: 10px; }
+    .ind {
+      display: flex; align-items: center; gap: 14px; text-align: left; border: 2px solid var(--line);
+      border-left-width: 8px; background: #fff; border-radius: 14px; padding: 14px 16px; font-size: 20px; font-weight: 700; color: var(--ink);
+    }
+    .ind .icon { font-size: 28px; }
+    .actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+    .actions .btn { padding: 14px; font-size: 18px; }
+    .big-icon { font-size: 60px; text-align: center; }
+
+    .picker { position: fixed; inset: 0; background: var(--page); z-index: 15; overflow: auto; }
+    .picker-body { max-width: 760px; margin: 0 auto; padding: 30px 20px; text-align: center; }
+    .picker-body h1 { color: var(--navy); }
+    .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+    .choice { border: 2px solid var(--line); background: var(--card); border-radius: 14px; padding: 20px 10px; font-size: 19px; font-weight: 700; color: var(--navy); }
+
+    .undo-bar {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 30; display: flex; gap: 14px; align-items: center;
+      background: var(--ink); color: #fff; padding: 12px 14px 12px 18px; border-radius: 12px; box-shadow: var(--shadow); max-width: 92vw;
+    }
+    .undo-bar button { background: #fff; color: var(--ink); border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <div class="brand-c">C</div>
+      <div><div class="brand-name">CHAPEL</div><div class="brand-sub">Effort Tracker</div></div>
+    </div>
+    <div class="bar-title" id="className"></div>
+    <nav class="bar-nav">
+      <button class="bar-btn" id="switchBtn">Switch class</button>
+      <button class="bar-btn" id="privacyBtn" aria-pressed="false">Hide status</button>
+      <a href="<?= baseUrl ?>?page=dashboard">Dashboard</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <p class="hint">Tap a student to log an entry.</p>
+      <div class="legend" id="legend"></div>
+    </div>
+    <section class="grid" id="grid"></section>
+  </main>
+
+  <div class="picker hidden" id="picker"><div class="picker-body" id="pickerBody"></div></div>
+  <div class="modal hidden" id="modal"><div class="sheet" id="sheet"></div></div>
+  <div class="undo-bar hidden" id="undoBar"><span id="undoText"></span><button id="undoBtn">Undo</button></div>
+
+<script>
+  var BASE_URL = '<?= baseUrl ?>';
+  var STAGE_LABEL = { contact: 'Contact home', monitor: 'Contacted', decide: 'Decide next step', intervention: 'Intervention' };
+  var L = { state: null, classId: null, lastEntry: null };
+
+  function store(key, value) {
+    try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch (e) { return null; }
+  }
+
+  function start() {
+    L.classId = store('effort.classId');
+    setPrivate(store('effort.private') === '1');
+    api('getLogStart').then(function (info) {
+      if (info.classes.some(function (c) { return c.classId === L.classId; })) loadClass(L.classId); else showPicker(info);
+    }).catch(function (e) { toast(e.message, true); });
+    setInterval(function () { if (L.classId && $('#modal').classList.contains('hidden')) refresh(); }, 60000);
+  }
+
+  function loadClass(id) {
+    L.classId = id;
+    store('effort.classId', id);
+    $('#picker').classList.add('hidden');
+    return refresh();
+  }
+
+  function refresh() {
+    return api('getLogState', L.classId).then(setState).catch(function (e) {
+      if (/could not be found/.test(e.message)) api('getLogStart').then(showPicker); else toast(e.message, true);
+    });
+  }
+
+  function setState(st) {
+    if (!st) return;
+    L.state = st;
+    render();
+  }
+
+  function render() {
+    var st = L.state, t = st.settings.threshold;
+    $('#className').textContent = st.className;
+    $('#legend').innerHTML = '<span><span class="dots"><i class="on"></i></span> entries in the last ' + st.settings.windowDays +
+      ' days (concern at ' + t + ')</span>';
+    $('#grid').innerHTML = st.students.length ? st.students.map(function (s) {
+      var extra = '';
+      if (s.stage !== 'ok') extra = '<span class="stage st-' + s.stage + '">' + STAGE_LABEL[s.stage] + '</span>';
+      else if (s.recent) {
+        var dots = '';
+        for (var i = 0; i < t; i++) dots += '<i class="' + (i < s.recent ? 'on' : '') + '"></i>';
+        extra = '<span class="dots" aria-label="' + s.recent + ' of ' + t + '">' + dots + '</span>';
+      }
+      return '<button class="tile st-border-' + s.stage + '" data-id="' + esc(s.id) + '">' + esc(s.name) + extra + '</button>';
+    }).join('') : '<div class="card" style="grid-column:1/-1;text-align:center">No students in this class yet. ' +
+      'Add them on the <a href="' + BASE_URL + '?page=dashboard">dashboard</a> (Classes tab).</div>';
+  }
+
+  function setPrivate(on) {
+    document.body.classList.toggle('private', on);
+    $('#privacyBtn').textContent = on ? 'Show status' : 'Hide status';
+    $('#privacyBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
+    store('effort.private', on ? '1' : '0');
+  }
+  $('#privacyBtn').onclick = function () { setPrivate(!document.body.classList.contains('private')); };
+  $('#switchBtn').onclick = function () { api('getLogStart').then(showPicker); };
+
+  /* ---------- Pop-up ---------- */
+
+  function openSheet(html) { $('#sheet').innerHTML = html; $('#modal').classList.remove('hidden'); }
+  function closeSheet() { $('#modal').classList.add('hidden'); $('#sheet').innerHTML = ''; }
+  $('#modal').addEventListener('click', function (e) {
+    if (e.target.id === 'modal' || e.target.closest('[data-act="close"]')) closeSheet();
+  });
+
+  $('#grid').addEventListener('click', function (e) {
+    var b = e.target.closest('.tile');
+    if (!b) return;
+    var s = L.state.students.filter(function (x) { return x.id === b.dataset.id; })[0];
+    openSheet('<h2>' + esc(s.name) + '</h2><p class="sub">Which indicator?</p>' +
+      '<input class="note" id="note" placeholder="Note (optional)" autocomplete="off">' +
+      '<div class="inds">' + L.state.rubric.map(function (r, i) {
+        return '<button class="ind" data-i="' + i + '" style="border-left-color:' + esc(r.color) + '"><span class="icon">' +
+          esc(r.icon) + '</span>' + esc(r.name) + '</button>';
+      }).join('') + '</div><div class="actions"><button class="btn btn-soft" data-act="close">Cancel</button></div>');
+    $('#sheet').querySelectorAll('.ind').forEach(function (btn) {
+      btn.onclick = function () { logIt(s, L.state.rubric[Number(btn.dataset.i)].name, $('#note').value); };
+    });
+  });
+
+  function logIt(student, indicator, note) {
+    $('#sheet').querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    api('logEntry', { classId: L.classId, studentId: student.id, indicator: indicator, note: note }).then(function (res) {
+      setState(res.state);
+      L.lastEntry = res.entryId;
+      if (res.alert) {
+        openSheet('<div class="big-icon">' + (res.alert === 'Reached concern' ? '&#128222;' : '&#9888;&#65039;') + '</div>' +
+          '<h2>' + esc(res.message) + '</h2><p class="sub">An email with the details is on its way to you.</p>' +
+          '<div class="actions"><a class="btn" style="text-align:center;text-decoration:none" href="' + BASE_URL + '?page=dashboard">Open dashboard</a>' +
+          '<button class="btn btn-soft" data-act="undo">Undo this entry</button>' +
+          '<button class="btn btn-soft" data-act="close">OK</button></div>');
+        $('#sheet').querySelector('[data-act="undo"]').onclick = function () { closeSheet(); undo(); };
+      } else {
+        closeSheet();
+        showUndo(res.message);
+      }
+    }).catch(function (e) { closeSheet(); toast(e.message, true); });
+  }
+
+  var undoTimer;
+  function showUndo(text) {
+    var t = document.getElementById('toast');
+    if (t) t.className = 'toast hidden'; // never show both at once
+    $('#undoText').textContent = text;
+    $('#undoBar').classList.remove('hidden');
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(function () { $('#undoBar').classList.add('hidden'); }, 8000);
+  }
+  $('#undoBtn').onclick = function () { $('#undoBar').classList.add('hidden'); undo(); };
+
+  function undo() {
+    if (!L.lastEntry) return;
+    var id = L.lastEntry;
+    L.lastEntry = null;
+    api('undoEntry', id, L.classId).then(function (res) { setState(res.state); toast(res.message); })
+      .catch(function (e) { toast(e.message, true); });
+  }
+
+  /* ---------- Choosing a class ---------- */
+
+  function showPicker(info) {
+    var html = '<h1>Which class?</h1>';
+    html += info.classes.length ? '<div class="choices">' + info.classes.map(function (c) {
+      return '<button class="choice" data-class="' + esc(c.classId) + '">' + esc(c.name) + '</button>';
+    }).join('') + '</div>' : '<div class="card"><p>There are no classes yet.</p>' +
+      '<a class="btn" style="text-decoration:none;display:inline-block" href="' + BASE_URL + '?page=dashboard">Open the dashboard to add your classes</a></div>';
+    if (L.state) html += '<p><button class="btn btn-soft" id="pickerCancel">Cancel</button></p>';
+    $('#pickerBody').innerHTML = html;
+    $('#picker').classList.remove('hidden');
+    $('#pickerBody').onclick = function (e) {
+      var b = e.target.closest('[data-class]');
+      if (b) loadClass(b.dataset.class);
+      if (e.target.id === 'pickerCancel') $('#picker').classList.add('hidden');
+    };
+  }
+
+  start();
+</script>
+</body>
+</html>
