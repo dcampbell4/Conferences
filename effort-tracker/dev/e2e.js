@@ -8,6 +8,7 @@ const fs = require('fs');
 const { chromium } = require('playwright');
 
 process.env.PORT = process.env.PORT || '8798';
+process.env.API_DELAY_MS = process.env.API_DELAY_MS || '1500'; // a slow day on Google's servers
 const server = require('./server');
 const BASE = 'http://localhost:' + process.env.PORT;
 const SHOTS = process.env.SHOTS || path.join(__dirname, 'screenshots');
@@ -27,6 +28,7 @@ async function main() {
     if (note) await page.fill('#note', note);
     await page.click('.ind:has-text("' + indicator + '")');
   };
+  const allSaved = () => page.waitForSelector('#saving.hidden', { state: 'attached', timeout: 20000 });
 
   // 1. Import classes from Google Classroom on the dashboard
   await page.goto(BASE + '/exec?page=dashboard');
@@ -45,36 +47,40 @@ async function main() {
   await page.waitForSelector('.ind');
   await page.fill('#note', 'Phone out during task');
   await shot('01-choose-indicator');
+  const t0 = Date.now();
   await page.click('.ind:has-text("Engagement")');
   await page.waitForSelector('#undoBar:not(.hidden)');
+  const shownAfter = Date.now() - t0;
+  assert.ok(shownAfter < 600, 'logging took ' + shownAfter + ' ms to show, even though saving takes 1.5 s');
+  assert.ok(await page.locator('#saving:not(.hidden)').count(), '"Saving..." shows while it saves');
   await shot('02-logged-with-undo');
 
-  // Undo works
+  // Undo straight away, before the save has even finished
   await page.click('#undoBtn');
-  await page.waitForTimeout(400);
+  await allSaved();
   let entries = await (await fetch(BASE + '/debug/sheet?name=Log')).json();
   assert.strictEqual(entries.length, 0);
 
-  // 3. Three entries for Ana -> concern pop-up and email
+  // 3. Three quick entries for Ana -> concern pop-up and email once saved
   await logEntry('Ana S.', 'Respect', 'Rude to partner');
-  await page.waitForSelector('#undoBar:not(.hidden)');
   await logEntry('Ana S.', 'Language');
-  await page.waitForSelector('#undoBar:not(.hidden)');
   await logEntry('Ana S.', 'Punctuality');
-  await page.waitForSelector('text=has reached concern');
+  await page.waitForSelector('text=has reached concern', { timeout: 20000 });
   await shot('03-reached-concern');
   await page.click('#sheet [data-act="close"]');
   const mails = await (await fetch(BASE + '/debug/mails')).json();
   assert.strictEqual(mails.length, 1);
   assert.match(mails[0].subject, /Contact home: Ana/);
 
-  // Two entries for Bruno (dots), one for Carla
+  await allSaved();
+  // Two entries for Bruno (dots)
   await logEntry('Bruno L.', 'Engagement');
-  await page.waitForSelector('#undoBar:not(.hidden)');
   await logEntry('Bruno L.', 'Equipment');
-  await page.waitForSelector('#undoBar:not(.hidden)');
-  await page.waitForTimeout(300);
+  assert.strictEqual(await tile('Bruno L.').locator('.dots i.on').count(), 2, 'dots update before saving finishes');
+  await allSaved();
   await shot('04-log-screen');
+  entries = await (await fetch(BASE + '/debug/sheet?name=Log')).json();
+  assert.strictEqual(entries.length, 5);
 
   // Hide status (if the screen is visible to students)
   await page.click('#privacyBtn');

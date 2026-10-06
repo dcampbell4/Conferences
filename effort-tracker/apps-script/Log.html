@@ -67,6 +67,7 @@
     </div>
     <div class="bar-title" id="className"></div>
     <nav class="bar-nav">
+      <span class="bar-btn hidden" id="saving" aria-live="polite">Saving&hellip;</span>
       <button class="bar-btn" id="switchBtn">Switch class</button>
       <button class="bar-btn" id="privacyBtn" aria-pressed="false">Hide status</button>
       <a href="<?= baseUrl ?>?page=dashboard">Dashboard</a>
@@ -100,7 +101,7 @@
     api('getLogStart').then(function (info) {
       if (info.classes.some(function (c) { return c.classId === L.classId; })) loadClass(L.classId); else showPicker(info);
     }).catch(function (e) { toast(e.message, true); });
-    setInterval(function () { if (L.classId && $('#modal').classList.contains('hidden')) refresh(); }, 60000);
+    setInterval(function () { if (L.classId && !pending && $('#modal').classList.contains('hidden')) refresh(); }, 60000);
   }
 
   function loadClass(id) {
@@ -172,23 +173,69 @@
     });
   });
 
+  /*
+   * Saving happens in the background so the screen never waits for Google.
+   * Requests go one at a time, in order, so an Undo always follows the entry it undoes.
+   */
+  var queue = Promise.resolve();
+  var pending = 0;
+
+  function inBackground(fn) {
+    pending++;
+    showSaving();
+    queue = queue.then(fn).catch(function () {}).then(function () { pending--; showSaving(); });
+  }
+
+  function showSaving() {
+    $('#saving').classList.toggle('hidden', pending === 0);
+  }
+
+  window.addEventListener('beforeunload', function (e) {
+    if (pending > 0) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  function newId() {
+    return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).toLowerCase();
+  }
+
+  function updateStudent(st) {
+    if (!st || !L.state) return;
+    L.state.students.forEach(function (x) { if (x.id === st.id) { x.stage = st.stage; x.recent = st.recent; } });
+    render();
+  }
+
   function logIt(student, indicator, note) {
-    $('#sheet').querySelectorAll('button').forEach(function (b) { b.disabled = true; });
-    api('logEntry', { classId: L.classId, studentId: student.id, indicator: indicator, note: note }).then(function (res) {
-      setState(res.state);
-      L.lastEntry = res.entryId;
-      if (res.alert) {
-        openSheet('<div class="big-icon">' + (res.alert === 'Reached concern' ? '&#128222;' : '&#9888;&#65039;') + '</div>' +
-          '<h2>' + esc(res.message) + '</h2><p class="sub">An email with the details is on its way to you.</p>' +
-          '<div class="actions"><a class="btn" style="text-align:center;text-decoration:none" href="' + BASE_URL + '?page=dashboard">Open dashboard</a>' +
-          '<button class="btn btn-soft" data-act="undo">Undo this entry</button>' +
-          '<button class="btn btn-soft" data-act="close">OK</button></div>');
-        $('#sheet').querySelector('[data-act="undo"]').onclick = function () { closeSheet(); undo(); };
-      } else {
-        closeSheet();
-        showUndo(res.message);
-      }
-    }).catch(function (e) { closeSheet(); toast(e.message, true); });
+    var entryId = newId();
+    var classId = L.classId;
+    // Show it straight away...
+    closeSheet();
+    if (student.stage === 'ok' || student.stage === 'monitor') student.recent++;
+    render();
+    L.lastEntry = entryId;
+    showUndo(indicator + ' logged for ' + student.name);
+    // ...then save it.
+    inBackground(function () {
+      return api('logEntry', { classId: classId, studentId: student.id, indicator: indicator, note: note, entryId: entryId })
+        .then(function (res) {
+          if (L.classId === classId) updateStudent(res.student);
+          if (res.alert) showAlert(res);
+        })
+        .catch(function (e) {
+          if (student.recent > 0 && (student.stage === 'ok' || student.stage === 'monitor')) student.recent--;
+          render();
+          if (L.lastEntry === entryId) { L.lastEntry = null; $('#undoBar').classList.add('hidden'); }
+          toast('Not saved for ' + student.name + ': ' + e.message, true);
+        });
+    });
+  }
+
+  function showAlert(res) {
+    openSheet('<div class="big-icon">' + (res.alert === 'Reached concern' ? '&#128222;' : '&#9888;&#65039;') + '</div>' +
+      '<h2>' + esc(res.message) + '</h2><p class="sub">An email with the details is on its way to you.</p>' +
+      '<div class="actions"><a class="btn" style="text-align:center;text-decoration:none" href="' + BASE_URL + '?page=dashboard">Open dashboard</a>' +
+      '<button class="btn btn-soft" data-act="undo">Undo this entry</button>' +
+      '<button class="btn btn-soft" data-act="close">OK</button></div>');
+    $('#sheet').querySelector('[data-act="undo"]').onclick = function () { closeSheet(); undo(res.entryId); };
   }
 
   var undoTimer;
@@ -200,14 +247,16 @@
     clearTimeout(undoTimer);
     undoTimer = setTimeout(function () { $('#undoBar').classList.add('hidden'); }, 8000);
   }
-  $('#undoBtn').onclick = function () { $('#undoBar').classList.add('hidden'); undo(); };
+  $('#undoBtn').onclick = function () { $('#undoBar').classList.add('hidden'); undo(L.lastEntry); };
 
-  function undo() {
-    if (!L.lastEntry) return;
-    var id = L.lastEntry;
-    L.lastEntry = null;
-    api('undoEntry', id, L.classId).then(function (res) { setState(res.state); toast(res.message); })
-      .catch(function (e) { toast(e.message, true); });
+  function undo(entryId) {
+    if (!entryId) return;
+    if (L.lastEntry === entryId) L.lastEntry = null;
+    toast('Entry removed.');
+    inBackground(function () {
+      return api('undoEntry', entryId).then(function (res) { updateStudent(res.student); })
+        .catch(function (e) { toast(e.message, true); });
+    });
   }
 
   /* ---------- Choosing a class ---------- */

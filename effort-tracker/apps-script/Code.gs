@@ -348,22 +348,22 @@ function rowValues_(table, o) {
  * Who is using the app?
  * ==================================================================== */
 
-function currentUser_() {
+function currentUser_(settings) {
   const email = lower_(Session.getActiveUser().getEmail());
   const owner = lower_(Session.getEffectiveUser().getEmail());
-  const s = getSettings_();
+  const s = settings || getSettings_();
   const isOwner = !!email && email === owner;
   return { email: email, isOwner: isOwner, isTeacher: isOwner || (!!email && s.teachers.indexOf(email) >= 0) };
 }
 
-function requireTeacher_() {
-  const user = currentUser_();
+function requireTeacher_(settings) {
+  const user = currentUser_(settings);
   if (!user.isTeacher) throw userError_('You do not have access to the Effort Tracker.');
   return user;
 }
 
-function visibleClasses_(user) {
-  return readRows_(TABLES.classes).filter(function (c) {
+function visibleClasses_(user, classRows) {
+  return (classRows || readRows_(TABLES.classes)).filter(function (c) {
     return user.isOwner || lower_(c.teacherEmail) === user.email;
   });
 }
@@ -421,26 +421,32 @@ function computeStatus_(s, logs, follows, now) {
       return f.action === ACTIONS.ok || f.action === ACTIONS.contacted;
     }).pop();
     st.cycleStart = Math.max(s.periodStart, reset ? toMs_(reset.date) : 0);
+    const resetAt = reset ? toMs_(reset.date) : -1;
     const windowStart = now - s.windowDays * DAY;
-    st.recent = st.entries.filter(function (l) {
+    st.counting = st.entries.filter(function (l) {
       const t = toMs_(l.date);
-      return t >= st.cycleStart && t >= windowStart;
-    }).length;
+      return t > resetAt && t >= windowStart; // only entries strictly after a reset count
+    });
+    st.recent = st.counting.length;
     st.total = st.entries.length;
     st.entries.forEach(function (l) { st.byIndicator[l.indicator] = (st.byIndicator[l.indicator] || 0) + 1; });
   });
   return status;
 }
 
-/** After a new entry: does this student now need a call home, or a decision? */
-function checkThreshold_(s, student, cls, entry) {
-  const status = computeStatus_(s, readRows_(TABLES.log), readRows_(TABLES.follow), Date.now())[student.studentId];
-  if (!status || status.recent < s.threshold) return null;
+/**
+ * After a new entry: does this student now need a call home, or a decision?
+ * logs and follows are this student's rows (the new entry included). Returns { alert, stage, recent }.
+ */
+function checkThreshold_(s, student, cls, entry, logs, follows) {
+  const status = computeStatus_(s, logs, follows, Date.now())[student.studentId];
+  const result = { alert: null, stage: status ? status.stage : 'ok', recent: status ? status.recent : 0 };
+  if (!status || status.recent < s.threshold) return result;
 
   let action = null;
   if (status.stage === 'ok') action = ACTIONS.concern;
   if (status.stage === 'monitor') action = ACTIONS.still;
-  if (!action) return null;
+  if (!action) return result;
 
   appendRows_(TABLES.follow, [{
     date: new Date(), student: fullName_(student), className: cls.name, action: action,
@@ -448,7 +454,18 @@ function checkThreshold_(s, student, cls, entry) {
     classId: cls.classId, entryId: entry.entryId, followId: shortId_(),
   }]);
   if (s.emailAlerts) sendAlert_(s, action, student, cls, status);
-  return action;
+  result.alert = action;
+  result.stage = STAGE_AFTER[action];
+  return result;
+}
+
+/** One student's stage and count, from the sheet. */
+function studentStatus_(s, studentId) {
+  const x = computeStatus_(s,
+    readRows_(TABLES.log).filter(function (l) { return l.studentId === studentId; }),
+    readRows_(TABLES.follow).filter(function (f) { return f.studentId === studentId; }),
+    Date.now())[studentId];
+  return { id: studentId, stage: x ? x.stage : 'ok', recent: x ? x.recent : 0 };
 }
 
 /* ======================================================================
@@ -470,43 +487,54 @@ function getLogState(classId) {
   return buildLogState_(getClassFor_(user, classId), getSettings_());
 }
 
-/** req = { classId, studentId, indicator, note } */
+/**
+ * req = { classId, studentId, indicator, note, entryId }
+ * entryId is made by the page so it can offer Undo before the server answers.
+ * Kept quick: every tab is read at most once. Returns this student's new stage, not the whole class.
+ */
 function logEntry(req) {
-  const user = requireTeacher_();
+  const s = getSettings_();
+  const user = requireTeacher_(s);
   return withLock_(function () {
-    const s = getSettings_();
     const cls = getClassFor_(user, req.classId);
-    const student = getStudent_(req.studentId);
-    if (!isEnrolled_(cls.classId, student.studentId)) throw userError_('That student is not in this class.');
-    const rubric = getRubric_();
-    if (!rubric.some(function (r) { return r.name === req.indicator; })) throw userError_('Choose an indicator.');
+    const studentId = String(req.studentId);
+    const student = readRows_(TABLES.students).filter(function (r) { return r.studentId === studentId; })[0];
+    if (!student) throw userError_('That student could not be found.');
+    if (!isEnrolled_(cls.classId, studentId)) throw userError_('That student is not in this class.');
+    if (!getRubric_().some(function (r) { return r.name === req.indicator; })) throw userError_('Choose an indicator.');
+
+    const entryId = /^[a-z0-9]{6,24}$/.test(String(req.entryId || '')) ? String(req.entryId) : shortId_();
+    const logs = readRows_(TABLES.log).filter(function (l) { return l.studentId === studentId; });
+    if (logs.some(function (l) { return l.entryId === entryId; })) {
+      return { entryId: entryId, alert: null, message: 'Already saved.', student: studentStatus_(s, studentId) };
+    }
 
     const entry = {
       date: new Date(), className: cls.name, student: fullName_(student), indicator: req.indicator,
-      note: String(req.note || '').trim(), classId: cls.classId, studentId: student.studentId, entryId: shortId_(),
+      note: String(req.note || '').trim(), classId: cls.classId, studentId: studentId, entryId: entryId,
     };
     appendRows_(TABLES.log, [entry]);
-    const alert = checkThreshold_(s, student, cls, entry);
+    logs.push(entry);
+    const follows = readRows_(TABLES.follow).filter(function (f) { return f.studentId === studentId; });
+    const r = checkThreshold_(s, student, cls, entry, logs, follows);
 
-    let message = req.indicator + ' logged for ' + shortName_(student) + '.';
-    if (alert === ACTIONS.concern) message = shortName_(student) + ' has reached concern. Contact home.';
-    if (alert === ACTIONS.still) message = shortName_(student) + ' is still concerning after contact. Decide on next steps.';
-    return { entryId: entry.entryId, alert: alert, message: message, state: buildLogState_(cls, s) };
+    let message = req.indicator + ' logged for ' + shortName_(student);
+    if (r.alert === ACTIONS.concern) message = shortName_(student) + ' has reached concern. Contact home.';
+    if (r.alert === ACTIONS.still) message = shortName_(student) + ' is still concerning after contact. Decide on next steps.';
+    return { entryId: entryId, alert: r.alert, message: message, student: { id: studentId, stage: r.stage, recent: r.recent } };
   });
 }
 
-/** Removes an entry (and any concern it caused). */
-function undoEntry(entryId, classId) {
-  const user = requireTeacher_();
+/** Removes an entry (and any concern it caused). Returns that student's new stage. */
+function undoEntry(entryId) {
+  const s = getSettings_();
+  requireTeacher_(s);
   return withLock_(function () {
-    const s = getSettings_();
     const rows = readRows_(TABLES.log).filter(function (l) { return l.entryId === String(entryId); });
     if (!rows.length) throw userError_('That entry was already removed.');
     deleteRows_(TABLES.log, rows);
     deleteRows_(TABLES.follow, readRows_(TABLES.follow).filter(function (f) { return f.entryId === String(entryId); }));
-    const result = { message: 'Entry removed.' };
-    if (classId) result.state = buildLogState_(getClassFor_(user, classId), s);
-    return result;
+    return { message: 'Entry removed.', student: studentStatus_(s, rows[0].studentId) };
   });
 }
 
@@ -606,7 +634,7 @@ function recordFollowUp(studentId, action, note) {
 }
 
 function deleteEntry(entryId) {
-  return undoEntry(entryId, null);
+  return undoEntry(entryId);
 }
 
 /* ======================================================================
@@ -616,9 +644,7 @@ function deleteEntry(entryId) {
 function sendAlert_(s, action, student, cls, status) {
   const name = fullName_(student);
   const url = ScriptApp.getService().getUrl();
-  const recent = status.entries.filter(function (l) {
-    return toMs_(l.date) >= status.cycleStart && toMs_(l.date) >= Date.now() - s.windowDays * DAY;
-  });
+  const recent = status.counting;
   const list = recent.map(function (l) {
     return '<li>' + formatDay_(l.date) + ' - <b>' + escapeHtml_(l.indicator) + '</b>' +
       (l.note ? ': ' + escapeHtml_(l.note) : '') + ' (' + escapeHtml_(l.className) + ')</li>';

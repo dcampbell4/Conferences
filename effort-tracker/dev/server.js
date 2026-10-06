@@ -72,6 +72,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) {
       const { args, as } = await body(req);
       const fn = url.pathname.slice(5);
+      // Pretend Google is slow, to check the page still feels instant.
+      if (process.env.API_DELAY_MS) await new Promise((r) => setTimeout(r, Number(process.env.API_DELAY_MS)));
       try {
         const result = app.call(fn, args || [], as || undefined);
         return send(res, 200, 'application/json', JSON.stringify({ ok: true, result }));

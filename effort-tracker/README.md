@@ -19,7 +19,7 @@ version is unchanged.
 ## Testing on a computer (optional)
 
 ```bash
-node effort-tracker/dev/test-logic.js   # the concern / follow-up rules (14 tests)
+node effort-tracker/dev/test-logic.js   # the concern / follow-up rules (17 tests)
 node effort-tracker/dev/server.js       # try it at http://localhost:8787/exec with made-up students
 node effort-tracker/dev/e2e.js          # clicks through every screen (needs Playwright)
 ```

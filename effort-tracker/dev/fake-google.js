@@ -24,6 +24,7 @@ class FakeRange {
     });
   }
   getValues() {
+    this.sheet.ss.reads = (this.sheet.ss.reads || 0) + 1;
     const out = [];
     for (let r = 0; r < this.rows; r++) {
       const row = [];
@@ -265,6 +266,9 @@ function createApp(options = {}) {
       state.user = user === undefined ? owner : user;
       if (typeof ctx[fn] !== 'function' || /_$/.test(fn)) throw new Error('Script function not found: ' + fn);
       const result = ctx[fn](...JSON.parse(JSON.stringify(args)));
+      // A real person cannot do two things in the same millisecond; make sure tests can't either.
+      const t = Date.now();
+      while (Date.now() === t) { /* wait for the clock to tick */ }
       return result === undefined ? null : JSON.parse(JSON.stringify(result));
     },
     sheet(name) { return state.ss.getSheetByName(name); },
