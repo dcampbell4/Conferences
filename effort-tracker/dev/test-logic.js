@@ -122,6 +122,32 @@ test('the threshold and window come from Settings', () => {
   assert.strictEqual(app.state.mails.length, 1); // emails off for Bruno
 });
 
+test('logging is quick: each tab is read at most once per tap', () => {
+  const { app, classId, ids } = freshApp();
+  log(app, classId, ids['Ana S.']);
+  app.state.ss.reads = 0;
+  const r = log(app, classId, ids['Ana S.']);
+  assert.ok(app.state.ss.reads <= 7, 'read the sheet ' + app.state.ss.reads + ' times');
+  assert.deepStrictEqual(r.student, { id: ids['Ana S.'], stage: 'ok', recent: 2 });
+});
+
+test('the page can choose the entry ID (for instant Undo), and a retry does not log twice', () => {
+  const { app, classId, ids } = freshApp();
+  const req = { classId, studentId: ids['Ana S.'], indicator: IND[1], entryId: 'abc123xyz' };
+  assert.strictEqual(app.call('logEntry', [req]).entryId, 'abc123xyz');
+  app.call('logEntry', [req]);
+  assert.strictEqual(app.sheet('Log').dump().length, 1);
+  const undone = app.call('undoEntry', ['abc123xyz']);
+  assert.deepStrictEqual(undone.student, { id: ids['Ana S.'], stage: 'ok', recent: 0 });
+});
+
+test('the third entry reports the new stage back to the page', () => {
+  const { app, classId, ids } = freshApp();
+  log(app, classId, ids['Ana S.']);
+  log(app, classId, ids['Ana S.']);
+  assert.deepStrictEqual(log(app, classId, ids['Ana S.']).student, { id: ids['Ana S.'], stage: 'contact', recent: 3 });
+});
+
 console.log('After contacting home');
 
 test('contacted home -> 3 more entries -> "still concerning" email -> teacher decides', () => {
